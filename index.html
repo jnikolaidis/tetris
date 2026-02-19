@@ -19,10 +19,51 @@
     display: block;
     image-rendering: auto;
   }
+  #wrapper {
+    position: relative;
+    display: inline-block;
+  }
+  #toggles {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+  }
+  #toggles button {
+    background: rgba(30,30,60,0.85);
+    color: #6a6a90;
+    border: 1px solid #2a2a50;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font: bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+    white-space: nowrap;
+  }
+  #toggles button:hover {
+    border-color: #5a5a80;
+    color: #aaaacc;
+  }
+  #toggles button.on {
+    color: #00e5ff;
+    border-color: #00e5ff44;
+    background: rgba(0,229,255,0.08);
+  }
 </style>
 </head>
 <body>
-<canvas id="game"></canvas>
+<div id="wrapper">
+  <canvas id="game"></canvas>
+  <div id="toggles">
+    <button id="btn-ghost" class="on" onclick="toggleFeature('ghost',this)">Ghost</button>
+    <button id="btn-next" class="on" onclick="toggleFeature('next',this)">Next</button>
+    <button id="btn-hold" class="on" onclick="toggleFeature('hold',this)">Hold</button>
+  </div>
+</div>
 <script>
 /* ============================================
    SECTION 1: CONSTANTS & CONFIGURATION
@@ -202,6 +243,17 @@ let lastMovedOrRotated; // 'move' or 'rotate' — for T-spin detection
 // DAS state
 let dasLeft, dasRight, dasLeftTimer, dasRightTimer;
 let arrLeftTimer, arrRightTimer;
+
+// Feature toggles
+const features = { ghost: true, next: true, hold: true };
+
+function toggleFeature(name, btn) {
+  features[name] = !features[name];
+  btn.classList.toggle('on', features[name]);
+  // Prevent button from stealing focus from game
+  btn.blur();
+  canvas.focus();
+}
 
 // Input tracking
 const keys = {};
@@ -421,6 +473,7 @@ function rotate(dir) { // dir: 1 = CW, -1 = CCW
 }
 
 function holdPiece() {
+  if (!features.hold) return;
   if (!activePiece || holdUsed) return;
   const curType = activePiece.type;
   if (holdType === 0) {
@@ -580,11 +633,23 @@ function processInput(dt) {
     if (justPressed['KeyP'] || justPressed['Escape']) {
       phase = 'playing';
     }
+    if (justPressed['KeyQ']) {
+      if (score > highScore) { highScore = score; saveHighScore(highScore); }
+      phase = 'menu';
+    }
     clearJustPressed();
     return;
   }
 
   if (phase !== 'playing') { clearJustPressed(); return; }
+
+  // Quit to menu
+  if (justPressed['KeyQ']) {
+    if (score > highScore) { highScore = score; saveHighScore(highScore); }
+    phase = 'menu';
+    clearJustPressed();
+    return;
+  }
 
   // Pause
   if (justPressed['KeyP'] || justPressed['Escape']) {
@@ -806,6 +871,7 @@ function drawBoard() {
 }
 
 function drawGhost() {
+  if (!features.ghost) return;
   if (!activePiece || phase !== 'playing') return;
   const gy = ghostY();
   if (gy === activePiece.y) return;
@@ -892,8 +958,8 @@ function drawHoldPanel() {
   const py = FIELD_Y;
   const pw = PANEL_W - MARGIN;
   const ph = CELL * 4;
-  drawPanel(px, py, pw, ph, 'HOLD');
-  if (holdType) {
+  drawPanel(px, py, pw, ph, features.hold ? 'HOLD' : 'HOLD (off)');
+  if (features.hold && holdType) {
     drawPieceInBox(holdType, px + pw / 2, py + ph / 2 + 8);
   }
 }
@@ -902,11 +968,12 @@ function drawNextPanel() {
   const px = FIELD_X + FIELD_W + MARGIN + MARGIN / 2;
   const py = FIELD_Y;
   const pw = PANEL_W - MARGIN;
-  // Show 3 next pieces
   const ph = CELL * 12;
-  drawPanel(px, py, pw, ph, 'NEXT');
-  for (let i = 0; i < Math.min(3, nextQueue.length); i++) {
-    drawPieceInBox(nextQueue[i], px + pw / 2, py + 50 + i * CELL * 3.5);
+  drawPanel(px, py, pw, ph, features.next ? 'NEXT' : 'NEXT (off)');
+  if (features.next) {
+    for (let i = 0; i < Math.min(3, nextQueue.length); i++) {
+      drawPieceInBox(nextQueue[i], px + pw / 2, py + 50 + i * CELL * 3.5);
+    }
   }
 }
 
@@ -994,6 +1061,7 @@ function drawControls() {
     'SPACE  Hard Drop',
     'C  Hold',
     'P / ESC  Pause',
+    'Q  Quit to Menu',
   ];
   ctx.textAlign = 'center';
   ctx.fillStyle = C_TEXT_DIM;
@@ -1026,7 +1094,7 @@ function render() {
   drawScorePanel();
 
   if (phase === 'paused') {
-    drawOverlay('PAUSED', 'Press P to resume');
+    drawOverlay('PAUSED', 'P to resume  /  Q to quit');
   }
 
   if (phase === 'gameover') {
