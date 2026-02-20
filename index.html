@@ -25,26 +25,31 @@
   }
   #toggles {
     position: absolute;
-    left: 1%;
-    bottom: 21%;
+    /* Aligned to left panel: x=15..165 on 720px canvas = 2.08%..22.92% */
+    left: 2.08%;
+    width: 20.83%;
+    /* Below score panel: y=490 on 720px canvas → top = 68% */
+    top: 68%;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     z-index: 10;
+    transition: opacity 0.2s;
   }
+  #toggles.hidden { opacity: 0; pointer-events: none; }
   #toggles button {
     background: rgba(25,10,50,0.85);
     color: #7a6a9a;
     border: 1px solid #3a2060;
-    border-radius: 5px;
-    padding: 6px 10px;
+    border-radius: 4px;
+    padding: 5px 0;
     font: bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     cursor: pointer;
     transition: all 0.15s;
     user-select: none;
     white-space: nowrap;
-    min-width: 80px;
-    text-align: left;
+    width: 100%;
+    text-align: center;
   }
   #toggles button:hover {
     border-color: #6a4a90;
@@ -60,7 +65,7 @@
 <body>
 <div id="wrapper">
   <canvas id="game"></canvas>
-  <div id="toggles">
+  <div id="toggles" class="hidden">
     <button id="btn-sound" onclick="toggleFeature('sound',this)">🔇 Sound</button>
     <button id="btn-ghost" onclick="toggleFeature('ghost',this)">👻 Ghost</button>
     <button id="btn-next" class="on" onclick="toggleFeature('next',this)">⏭ Next</button>
@@ -1187,23 +1192,100 @@ function drawOverlay(title, subtitle) {
   ctx.fillText(subtitle, CANVAS_W / 2, CANVAS_H / 2 + 20);
 }
 
-function drawControls() {
-  const controlLines = [
-    '← →  Move',
-    '↓  Soft Drop',
-    '↑ / X  Rotate CW',
-    'Z  Rotate CCW',
-    'SPACE  Hard Drop',
-    'C  Hold',
-    'P / ESC  Pause',
-    'Q  Quit to Menu',
-  ];
+
+function drawMenuScreen() {
+  const cx = CANVAS_W / 2;
+
+  // Subtle gradient background
+  const bgGrad = ctx.createLinearGradient(0, 0, CANVAS_W, CANVAS_H);
+  bgGrad.addColorStop(0, '#0f0820');
+  bgGrad.addColorStop(0.5, '#1a0e30');
+  bgGrad.addColorStop(1, '#0f0820');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Decorative horizontal line — magenta accent
+  const lineY = CANVAS_H * 0.30;
+  const lineGrad = ctx.createLinearGradient(CANVAS_W * 0.15, 0, CANVAS_W * 0.85, 0);
+  lineGrad.addColorStop(0, 'rgba(242,61,126,0)');
+  lineGrad.addColorStop(0.3, 'rgba(242,61,126,0.4)');
+  lineGrad.addColorStop(0.5, 'rgba(242,61,126,0.6)');
+  lineGrad.addColorStop(0.7, 'rgba(242,61,126,0.4)');
+  lineGrad.addColorStop(1, 'rgba(242,61,126,0)');
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(CANVAS_W * 0.15, lineY, CANVAS_W * 0.7, 1.5);
+
+  // Title
   ctx.textAlign = 'center';
+  ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  // Title gradient effect via two layers
+  ctx.fillStyle = '#f0e8ff';
+  ctx.fillText('TETRIS', cx, CANVAS_H * 0.26);
+
+  // Bottom decorative line
+  const lineY2 = CANVAS_H * 0.30 + 4;
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(CANVAS_W * 0.15, lineY2, CANVAS_W * 0.7, 1);
+
+  // "Press SPACE to start" — pulsing
+  const pulse = 0.5 + Math.sin(Date.now() / 600) * 0.3;
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = C_TEXT;
+  ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('Press SPACE to start', cx, CANVAS_H * 0.38);
+  ctx.globalAlpha = 1;
+
+  // Level selector
+  ctx.fillStyle = '#f23d7e';
+  ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('◄  LEVEL ' + startLevel + '  ►', cx, CANVAS_H * 0.46);
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  const startY = CANVAS_H / 2 + 95;
+  const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
+  ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', cx, CANVAS_H * 0.50);
+
+  // Controls section
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('CONTROLS', cx, CANVAS_H * 0.58);
+
+  // Thin separator
+  ctx.fillStyle = 'rgba(130,50,180,0.2)';
+  ctx.fillRect(cx - 80, CANVAS_H * 0.59, 160, 1);
+
+  const controlLines = [
+    ['← →', 'Move'],
+    ['↓', 'Soft Drop'],
+    ['↑ / X', 'Rotate CW'],
+    ['Z', 'Rotate CCW'],
+    ['SPACE', 'Hard Drop'],
+    ['C', 'Hold'],
+    ['P / ESC', 'Pause'],
+    ['Q', 'Quit to Menu'],
+  ];
+  const ctrlStartY = CANVAS_H * 0.62;
+  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   for (let i = 0; i < controlLines.length; i++) {
-    ctx.fillText(controlLines[i], CANVAS_W / 2, startY + i * 18);
+    const y = ctrlStartY + i * 17;
+    // Key
+    ctx.fillStyle = '#f0e8ff';
+    ctx.textAlign = 'right';
+    ctx.fillText(controlLines[i][0], cx - 10, y);
+    // Action
+    ctx.fillStyle = C_TEXT_DIM;
+    ctx.textAlign = 'left';
+    ctx.fillText(controlLines[i][1], cx + 10, y);
+  }
+
+  // High score at bottom
+  if (highScore > 0) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C_TEXT_DIM;
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('HIGH SCORE', cx, CANVAS_H * 0.92);
+    ctx.fillStyle = '#f23d7e';
+    ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(highScore.toLocaleString(), cx, CANVAS_H * 0.96);
   }
 }
 
@@ -1212,20 +1294,12 @@ function render() {
   ctx.fillStyle = C_BG;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
+  // Show/hide toggle buttons based on phase
+  const togglesEl = document.getElementById('toggles');
+  if (togglesEl) togglesEl.classList.toggle('hidden', phase === 'menu');
+
   if (phase === 'menu') {
-    drawOverlay('TETRIS', 'Press SPACE to start');
-
-    // Level selector
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#f23d7e';
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('◄  LEVEL ' + startLevel + '  ►', CANVAS_W / 2, CANVAS_H / 2 + 48);
-    ctx.fillStyle = C_TEXT_DIM;
-    ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
-    ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', CANVAS_W / 2, CANVAS_H / 2 + 68);
-
-    drawControls();
+    drawMenuScreen();
     return;
   }
 
