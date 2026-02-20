@@ -25,24 +25,27 @@
   }
   #toggles {
     position: absolute;
-    bottom: 8px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
-    gap: 6px;
+    flex-direction: column;
+    gap: 8px;
     z-index: 10;
   }
   #toggles button {
     background: rgba(30,30,60,0.85);
     color: #6a6a90;
     border: 1px solid #2a2a50;
-    border-radius: 4px;
-    padding: 4px 10px;
-    font: bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font: bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     cursor: pointer;
     transition: all 0.15s;
     user-select: none;
     white-space: nowrap;
+    min-width: 90px;
+    text-align: left;
   }
   #toggles button:hover {
     border-color: #5a5a80;
@@ -59,9 +62,10 @@
 <div id="wrapper">
   <canvas id="game"></canvas>
   <div id="toggles">
-    <button id="btn-ghost" class="on" onclick="toggleFeature('ghost',this)">Ghost</button>
-    <button id="btn-next" class="on" onclick="toggleFeature('next',this)">Next</button>
-    <button id="btn-hold" class="on" onclick="toggleFeature('hold',this)">Hold</button>
+    <button id="btn-sound" onclick="toggleFeature('sound',this)">🔇 Sound</button>
+    <button id="btn-ghost" onclick="toggleFeature('ghost',this)">👻 Ghost</button>
+    <button id="btn-next" class="on" onclick="toggleFeature('next',this)">⏭ Next</button>
+    <button id="btn-hold" class="on" onclick="toggleFeature('hold',this)">📦 Hold</button>
   </div>
 </div>
 <script>
@@ -245,14 +249,128 @@ let dasLeft, dasRight, dasLeftTimer, dasRightTimer;
 let arrLeftTimer, arrRightTimer;
 
 // Feature toggles
-const features = { ghost: true, next: true, hold: true };
+const features = { ghost: false, next: true, hold: true, sound: false };
+let startLevel = 1;
 
 function toggleFeature(name, btn) {
   features[name] = !features[name];
   btn.classList.toggle('on', features[name]);
+  // Update sound button emoji
+  if (name === 'sound') {
+    btn.textContent = features.sound ? '🔊 Sound' : '🔇 Sound';
+    if (features.sound) initAudio();
+  }
   // Prevent button from stealing focus from game
   btn.blur();
   canvas.focus();
+}
+
+/* ============================================
+   SOUND ENGINE (Web Audio API)
+   ============================================ */
+let audioCtx = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(name) {
+  if (!features.sound || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  const vol = 0.12;
+
+  if (name === 'move') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square'; osc.frequency.value = 440;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.06);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.06);
+  }
+  else if (name === 'rotate') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square'; osc.frequency.value = 880;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.05);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.05);
+  }
+  else if (name === 'lock') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square'; osc.frequency.value = 220;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.1);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.1);
+  }
+  else if (name === 'drop') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1000, t);
+    osc.frequency.linearRampToValueAtTime(400, t + 0.12);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.12);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.12);
+  }
+  else if (name === 'clear') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(523, t);
+    osc.frequency.linearRampToValueAtTime(784, t + 0.17);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.17);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.17);
+  }
+  else if (name === 'tetris') {
+    const notes = [523, 659, 784];
+    const dur = [0.1, 0.1, 0.15];
+    let offset = 0;
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'square'; osc.frequency.value = notes[i];
+      g.gain.setValueAtTime(vol * 1.2, t + offset);
+      g.gain.linearRampToValueAtTime(0, t + offset + dur[i]);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(t + offset); osc.stop(t + offset + dur[i]);
+      offset += dur[i];
+    }
+  }
+  else if (name === 'levelup') {
+    const notes = [330, 415, 523];
+    const dur = [0.075, 0.075, 0.15];
+    let offset = 0;
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'square'; osc.frequency.value = notes[i];
+      g.gain.setValueAtTime(vol, t + offset);
+      g.gain.linearRampToValueAtTime(0, t + offset + dur[i]);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(t + offset); osc.stop(t + offset + dur[i]);
+      offset += dur[i];
+    }
+  }
+  else if (name === 'gameover') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(784, t);
+    osc.frequency.linearRampToValueAtTime(262, t + 0.35);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol, t + 0.2);
+    g.gain.linearRampToValueAtTime(0, t + 0.35);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.35);
+  }
 }
 
 // Input tracking
@@ -273,8 +391,8 @@ function resetGame() {
   holdType = 0;
   holdUsed = false;
   score = 0;
-  level = 1;
-  lines = 0;
+  level = startLevel;
+  lines = (startLevel - 1) * 10;
   combo = -1;
   backToBack = false;
   gravityAcc = 0;
@@ -391,6 +509,7 @@ function spawnPiece() {
     activePiece = { type, rot, x, y };
     lockPiece();
     phase = 'gameover';
+    playSound('gameover');
     if (score > highScore) {
       highScore = score;
       saveHighScore(highScore);
@@ -412,6 +531,7 @@ function moveLeft() {
     activePiece.x--;
     lastMovedOrRotated = 'move';
     resetLockIfOnSurface();
+    playSound('move');
     return true;
   }
   return false;
@@ -424,6 +544,7 @@ function moveRight() {
     activePiece.x++;
     lastMovedOrRotated = 'move';
     resetLockIfOnSurface();
+    playSound('move');
     return true;
   }
   return false;
@@ -447,6 +568,7 @@ function hardDrop() {
   const gy = ghostY();
   score += (gy - activePiece.y) * 2;
   activePiece.y = gy;
+  playSound('drop');
   lockAndAdvance();
 }
 
@@ -466,6 +588,7 @@ function rotate(dir) { // dir: 1 = CW, -1 = CCW
       activePiece.y = y + dy;
       lastMovedOrRotated = 'rotate';
       resetLockIfOnSurface();
+      playSound('rotate');
       return true;
     }
   }
@@ -612,6 +735,14 @@ window.addEventListener('keyup', (e) => {
 
 function processInput(dt) {
   if (phase === 'menu') {
+    if (justPressed['ArrowLeft']) {
+      startLevel = Math.max(1, startLevel - 1);
+      playSound('move');
+    }
+    if (justPressed['ArrowRight']) {
+      startLevel = Math.min(15, startLevel + 1);
+      playSound('move');
+    }
     if (justPressed['Space'] || justPressed['Enter']) {
       phase = 'playing';
       resetGame();
@@ -724,15 +855,20 @@ function lockAndAdvance() {
   const { tspin, mini } = isTSpin();
   lockPiece();
   activePiece = null;
+  playSound('lock');
 
   const full = getFullRows();
   if (full.length > 0) {
+    const prevLevel = level;
     score += calculateScore(full.length, tspin, mini);
     lines += full.length;
     updateLevel();
     clearingRows = full;
     clearAnimTimer = 0;
     phase = 'lineclear';
+    if (full.length === 4) playSound('tetris');
+    else playSound('clear');
+    if (level > prevLevel) playSound('levelup');
   } else {
     // No lines cleared — still award T-spin no-line bonus
     if (tspin) score += 400 * level;
@@ -1066,9 +1202,9 @@ function drawControls() {
   ctx.textAlign = 'center';
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  const startY = CANVAS_H / 2 + 60;
+  const startY = CANVAS_H / 2 + 95;
   for (let i = 0; i < controlLines.length; i++) {
-    ctx.fillText(controlLines[i], CANVAS_W / 2, startY + i * 20);
+    ctx.fillText(controlLines[i], CANVAS_W / 2, startY + i * 18);
   }
 }
 
@@ -1079,6 +1215,17 @@ function render() {
 
   if (phase === 'menu') {
     drawOverlay('TETRIS', 'Press SPACE to start');
+
+    // Level selector
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#00e5ff';
+    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('◄  LEVEL ' + startLevel + '  ►', CANVAS_W / 2, CANVAS_H / 2 + 48);
+    ctx.fillStyle = C_TEXT_DIM;
+    ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
+    ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', CANVAS_W / 2, CANVAS_H / 2 + 68);
+
     drawControls();
     return;
   }
