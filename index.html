@@ -7,7 +7,7 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #050510;
+    background: linear-gradient(135deg, #1a0a2e 0%, #2d1548 40%, #3a1850 60%, #2a1040 100%);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -33,9 +33,9 @@
     z-index: 10;
   }
   #toggles button {
-    background: rgba(30,30,60,0.85);
-    color: #6a6a90;
-    border: 1px solid #2a2a50;
+    background: rgba(25,10,50,0.85);
+    color: #7a6a9a;
+    border: 1px solid #3a2060;
     border-radius: 5px;
     padding: 6px 10px;
     font: bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -47,13 +47,13 @@
     text-align: left;
   }
   #toggles button:hover {
-    border-color: #5a5a80;
-    color: #aaaacc;
+    border-color: #6a4a90;
+    color: #baa8d0;
   }
   #toggles button.on {
-    color: #00e5ff;
-    border-color: #00e5ff44;
-    background: rgba(0,229,255,0.08);
+    color: #f23d7e;
+    border-color: rgba(242,61,126,0.3);
+    background: rgba(242,61,126,0.08);
   }
 </style>
 </head>
@@ -97,14 +97,14 @@ const ARR_INTERVAL = 33;
 const LINE_CLEAR_TIME = 300;
 const ENTRY_DELAY = 80;
 
-// Colors
-const C_BG        = '#0a0a1a';
-const C_FIELD_BG  = '#0d0d20';
-const C_GRID      = 'rgba(255,255,255,0.04)';
-const C_BORDER    = '#2a2a50';
-const C_TEXT      = '#ffffff';
-const C_TEXT_DIM  = '#6a6a90';
-const C_PANEL_BG  = 'rgba(15,15,35,0.8)';
+// Colors — Omilia-inspired deep purple palette
+const C_BG        = '#0f0820';
+const C_FIELD_BG  = '#120a22';
+const C_GRID      = 'rgba(130,50,180,0.06)';
+const C_BORDER    = '#3a2060';
+const C_TEXT      = '#f0e8ff';
+const C_TEXT_DIM  = '#7a6a9a';
+const C_PANEL_BG  = 'rgba(25,10,50,0.8)';
 
 const PIECE_COLORS = {
   1: '#00e5ff', // I - Cyan
@@ -1157,7 +1157,7 @@ function drawScorePanel() {
   ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.fillText('HIGH SCORE', cx, yy);
   yy += 22;
-  ctx.fillStyle = '#ffea00';
+  ctx.fillStyle = '#f23d7e';
   ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.fillText(highScore.toLocaleString(), cx, yy);
 }
@@ -1168,13 +1168,13 @@ function drawLineClearAnim() {
   const alpha = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
   for (const row of clearingRows) {
     const py = FIELD_Y + (row - HIDDEN_ROWS) * CELL;
-    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.85})`;
+    ctx.fillStyle = `rgba(242,61,126,${alpha * 0.7})`;
     ctx.fillRect(FIELD_X, py, FIELD_W, CELL);
   }
 }
 
 function drawOverlay(title, subtitle) {
-  ctx.fillStyle = 'rgba(5,5,16,0.85)';
+  ctx.fillStyle = 'rgba(15,8,32,0.88)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
   ctx.textAlign = 'center';
@@ -1217,7 +1217,7 @@ function render() {
 
     // Level selector
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#00e5ff';
+    ctx.fillStyle = '#f23d7e';
     ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText('◄  LEVEL ' + startLevel + '  ►', CANVAS_W / 2, CANVAS_H / 2 + 48);
     ctx.fillStyle = C_TEXT_DIM;
@@ -1245,11 +1245,11 @@ function render() {
 
   if (phase === 'gameover') {
     // Darken overlay
-    ctx.fillStyle = 'rgba(5,5,16,0.8)';
+    ctx.fillStyle = 'rgba(15,8,32,0.82)';
     ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
 
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#ff1744';
+    ctx.fillStyle = '#f23d7e';
     ctx.font = 'bold 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText('GAME OVER', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 - 30);
 
@@ -1258,7 +1258,7 @@ function render() {
     ctx.fillText('Score: ' + score.toLocaleString(), FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 10);
 
     if (score >= highScore && score > 0) {
-      ctx.fillStyle = '#ffea00';
+      ctx.fillStyle = '#ec008c';
       ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.fillText('NEW HIGH SCORE!', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 38);
     }
