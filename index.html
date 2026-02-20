@@ -252,6 +252,11 @@ let lastMovedOrRotated; // 'move' or 'rotate' — for T-spin detection
 let dasLeft, dasRight, dasLeftTimer, dasRightTimer;
 let arrLeftTimer, arrRightTimer;
 
+// Visual effects state
+let particles = [];
+let scorePops = [];       // {text, x, y, timer, duration}
+let actionTexts = [];     // {text, timer, duration} — combo/b2b/tspin notifications
+
 // Feature toggles
 const features = { ghost: false, next: true, hold: true, sound: false };
 let startLevel = 2;
@@ -406,6 +411,9 @@ function resetGame() {
   clearingRows = [];
   clearAnimTimer = 0;
   lastMovedOrRotated = null;
+  particles = [];
+  scorePops = [];
+  actionTexts = [];
   dasLeft = false; dasRight = false;
   dasLeftTimer = 0; dasRightTimer = 0;
   arrLeftTimer = 0; arrRightTimer = 0;
@@ -572,6 +580,27 @@ function hardDrop() {
   const gy = ghostY();
   score += (gy - activePiece.y) * 2;
   activePiece.y = gy;
+  // Impact particles at landing position
+  const shape = getShape(activePiece.type, activePiece.rot);
+  const size = shape.length;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const px = FIELD_X + (activePiece.x + c) * CELL + CELL / 2;
+      const py = FIELD_Y + (gy + r - HIDDEN_ROWS) * CELL + CELL;
+      for (let i = 0; i < 3; i++) {
+        particles.push({
+          x: px, y: py,
+          vx: (Math.random() - 0.5) * 3,
+          vy: -Math.random() * 2,
+          life: 200 + Math.random() * 200,
+          maxLife: 300,
+          size: 1.5 + Math.random() * 2,
+          color: PIECE_COLORS[activePiece.type],
+        });
+      }
+    }
+  }
   playSound('drop');
   lockAndAdvance();
 }
@@ -855,6 +884,38 @@ function clearJustPressed() {
 /* ============================================
    SECTION 10: LOCK AND ADVANCE
    ============================================ */
+function spawnParticles(rows) {
+  for (const row of rows) {
+    const py = FIELD_Y + (row - HIDDEN_ROWS) * CELL + CELL / 2;
+    for (let i = 0; i < 12; i++) {
+      particles.push({
+        x: FIELD_X + Math.random() * FIELD_W,
+        y: py,
+        vx: (Math.random() - 0.5) * 4,
+        vy: (Math.random() - 0.8) * 3,
+        life: 400 + Math.random() * 300,
+        maxLife: 400 + Math.random() * 300,
+        size: 2 + Math.random() * 3,
+        color: Math.random() > 0.5 ? '#f23d7e' : '#ec008c',
+      });
+    }
+  }
+}
+
+function spawnScorePop(pts, label) {
+  if (pts <= 0) return;
+  scorePops.push({
+    text: '+' + pts.toLocaleString(),
+    x: FIELD_X + FIELD_W / 2,
+    y: FIELD_Y + FIELD_H / 2,
+    timer: 0,
+    duration: 800,
+  });
+  if (label) {
+    actionTexts.push({ text: label, timer: 0, duration: 1200 });
+  }
+}
+
 function lockAndAdvance() {
   const { tspin, mini } = isTSpin();
   lockPiece();
@@ -864,7 +925,9 @@ function lockAndAdvance() {
   const full = getFullRows();
   if (full.length > 0) {
     const prevLevel = level;
+    const prevScore = score;
     score += calculateScore(full.length, tspin, mini);
+    const gained = score - prevScore;
     lines += full.length;
     updateLevel();
     clearingRows = full;
@@ -873,10 +936,25 @@ function lockAndAdvance() {
     if (full.length === 4) playSound('tetris');
     else playSound('clear');
     if (level > prevLevel) playSound('levelup');
+
+    // Spawn particles for cleared rows
+    spawnParticles(full);
+
+    // Score pop
+    let label = '';
+    if (tspin) label = 'T-SPIN';
+    else if (mini) label = 'T-SPIN MINI';
+    if (full.length === 4) label = 'TETRIS!';
+    else if (full.length === 3) label = label ? label + ' TRIPLE' : 'TRIPLE';
+    else if (full.length === 2) label = label ? label + ' DOUBLE' : 'DOUBLE';
+    if (combo > 0) label += (label ? ' ' : '') + combo + 'x COMBO';
+    if (backToBack && (full.length === 4 || tspin)) label += ' B2B';
+    spawnScorePop(gained, label);
   } else {
     // No lines cleared — still award T-spin no-line bonus
-    if (tspin) score += 400 * level;
-    else if (mini) score += 100 * level;
+    const prevScore = score;
+    if (tspin) { score += 400 * level; spawnScorePop(400 * level, 'T-SPIN'); }
+    else if (mini) { score += 100 * level; spawnScorePop(100 * level, 'T-SPIN MINI'); }
     combo = -1;
     entryTimer = ENTRY_DELAY;
     phase = 'playing';
@@ -892,7 +970,32 @@ function lockAndAdvance() {
 /* ============================================
    SECTION 11: GAME UPDATE
    ============================================ */
+function updateEffects(dt) {
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.timer = (p.timer || 0) + dt;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.06; // gravity
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  // Update score pops
+  for (let i = scorePops.length - 1; i >= 0; i--) {
+    scorePops[i].timer += dt;
+    if (scorePops[i].timer >= scorePops[i].duration) scorePops.splice(i, 1);
+  }
+  // Update action texts
+  for (let i = actionTexts.length - 1; i >= 0; i--) {
+    actionTexts[i].timer += dt;
+    if (actionTexts[i].timer >= actionTexts[i].duration) actionTexts.splice(i, 1);
+  }
+}
+
 function update(dt) {
+  updateEffects(dt);
+
   if (phase === 'lineclear') {
     clearAnimTimer += dt;
     if (clearAnimTimer >= LINE_CLEAR_TIME) {
@@ -972,8 +1075,12 @@ function drawCell(x, y, colorIdx, alpha = 1) {
 }
 
 function drawPlayfield() {
-  // Background
-  ctx.fillStyle = C_FIELD_BG;
+  // Gradient background for field
+  const fieldGrad = ctx.createLinearGradient(FIELD_X, FIELD_Y, FIELD_X, FIELD_Y + FIELD_H);
+  fieldGrad.addColorStop(0, '#100a24');
+  fieldGrad.addColorStop(0.5, C_FIELD_BG);
+  fieldGrad.addColorStop(1, '#0e0820');
+  ctx.fillStyle = fieldGrad;
   ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
 
   // Grid lines
@@ -992,10 +1099,33 @@ function drawPlayfield() {
     ctx.stroke();
   }
 
-  // Border
-  ctx.strokeStyle = C_BORDER;
+  // Vignette on field edges
+  // Top
+  const vigT = ctx.createLinearGradient(FIELD_X, FIELD_Y, FIELD_X, FIELD_Y + CELL * 2);
+  vigT.addColorStop(0, 'rgba(10,5,20,0.4)');
+  vigT.addColorStop(1, 'rgba(10,5,20,0)');
+  ctx.fillStyle = vigT;
+  ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, CELL * 2);
+  // Bottom
+  const vigB = ctx.createLinearGradient(FIELD_X, FIELD_Y + FIELD_H - CELL * 2, FIELD_X, FIELD_Y + FIELD_H);
+  vigB.addColorStop(0, 'rgba(10,5,20,0)');
+  vigB.addColorStop(1, 'rgba(10,5,20,0.35)');
+  ctx.fillStyle = vigB;
+  ctx.fillRect(FIELD_X, FIELD_Y + FIELD_H - CELL * 2, FIELD_W, CELL * 2);
+
+  // Magenta glow border
+  ctx.save();
+  ctx.shadowColor = 'rgba(242,61,126,0.25)';
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = '#3a2060';
   ctx.lineWidth = 2;
   ctx.strokeRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2);
+  ctx.restore();
+
+  // Crisp inner border
+  ctx.strokeStyle = C_BORDER;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(FIELD_X - 0.5, FIELD_Y - 0.5, FIELD_W + 1, FIELD_H + 1);
 }
 
 function drawBoard() {
@@ -1080,17 +1210,40 @@ function drawPieceInBox(type, cx, cy, label) {
   }
 }
 
+function drawRoundedRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
 function drawPanel(x, y, w, h, title) {
+  drawRoundedRect(x, y, w, h, 6);
   ctx.fillStyle = C_PANEL_BG;
-  ctx.fillRect(x, y, w, h);
+  ctx.fill();
   ctx.strokeStyle = C_BORDER;
   ctx.lineWidth = 1;
-  ctx.strokeRect(x, y, w, h);
+  ctx.stroke();
 
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(title, x + w / 2, y + 18);
+
+  // Accent underline below title
+  const lineGrad = ctx.createLinearGradient(x + 10, 0, x + w - 10, 0);
+  lineGrad.addColorStop(0, 'rgba(242,61,126,0)');
+  lineGrad.addColorStop(0.5, 'rgba(242,61,126,0.3)');
+  lineGrad.addColorStop(1, 'rgba(242,61,126,0)');
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(x + 10, y + 24, w - 20, 1);
 }
 
 function drawHoldPanel() {
@@ -1121,11 +1274,12 @@ function drawScorePanel() {
   const px = MARGIN / 2;
   const py = FIELD_Y + CELL * 5;
   const pw = PANEL_W - MARGIN;
+  drawRoundedRect(px, py, pw, CELL * 10, 6);
   ctx.fillStyle = C_PANEL_BG;
-  ctx.fillRect(px, py, pw, CELL * 10);
+  ctx.fill();
   ctx.strokeStyle = C_BORDER;
   ctx.lineWidth = 1;
-  ctx.strokeRect(px, py, pw, CELL * 10);
+  ctx.stroke();
 
   ctx.textAlign = 'center';
   const cx = px + pw / 2;
@@ -1176,6 +1330,49 @@ function drawLineClearAnim() {
     ctx.fillStyle = `rgba(242,61,126,${alpha * 0.7})`;
     ctx.fillRect(FIELD_X, py, FIELD_W, CELL);
   }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawScorePops() {
+  ctx.textAlign = 'center';
+  for (const pop of scorePops) {
+    const t = pop.timer / pop.duration;
+    const alpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+    const yOff = -t * 60; // float upward
+    const scale = t < 0.1 ? 0.5 + t * 5 : 1; // quick scale-in
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.fillStyle = '#f23d7e';
+    ctx.font = `bold ${Math.round(18 * scale)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillText(pop.text, pop.x, pop.y + yOff);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawActionTexts() {
+  if (actionTexts.length === 0) return;
+  ctx.textAlign = 'center';
+  for (let i = 0; i < actionTexts.length; i++) {
+    const at = actionTexts[i];
+    const t = at.timer / at.duration;
+    const alpha = t < 0.15 ? t / 0.15 : t > 0.7 ? (1 - t) / 0.3 : 1;
+    const scale = t < 0.1 ? 0.7 + t * 3 : 1;
+    ctx.globalAlpha = Math.max(0, alpha * 0.9);
+    ctx.fillStyle = '#ec008c';
+    ctx.font = `bold ${Math.round(14 * scale)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillText(at.text, FIELD_X + FIELD_W / 2, FIELD_Y + CELL * 3 + i * 20);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawOverlay(title, subtitle) {
@@ -1290,8 +1487,12 @@ function drawMenuScreen() {
 }
 
 function render() {
-  // Clear
-  ctx.fillStyle = C_BG;
+  // Clear with subtle gradient
+  const canvasGrad = ctx.createLinearGradient(0, 0, CANVAS_W, CANVAS_H);
+  canvasGrad.addColorStop(0, '#0d0720');
+  canvasGrad.addColorStop(0.5, C_BG);
+  canvasGrad.addColorStop(1, '#0d0720');
+  ctx.fillStyle = canvasGrad;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
   // Show/hide toggle buttons based on phase
@@ -1309,6 +1510,9 @@ function render() {
   drawGhost();
   drawActivePiece();
   drawLineClearAnim();
+  drawParticles();
+  drawScorePops();
+  drawActionTexts();
   drawHoldPanel();
   drawNextPanel();
   drawScorePanel();
