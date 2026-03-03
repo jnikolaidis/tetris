@@ -61,12 +61,72 @@
     background: rgba(242,61,126,0.08);
   }
 
+  /* Mobile HUD */
+  #mobile-hud {
+    display: none;
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(15,8,32,0.95);
+    border-bottom: 1px solid #3a2060;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .hud-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .hud-zone canvas {
+    background: rgba(25,10,50,0.6);
+    border: 1px solid #3a2060;
+    border-radius: 6px;
+  }
+  .hud-label {
+    font-size: 9px;
+    font-weight: bold;
+    color: #7a6a9a;
+    letter-spacing: 1px;
+  }
+  .hud-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #hud-score {
+    font-size: 24px;
+    font-weight: bold;
+    color: #f0e8ff;
+    line-height: 1;
+  }
+  .hud-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .hud-sub span {
+    font-size: 11px;
+    color: #7a6a9a;
+    font-weight: bold;
+  }
+  .hud-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #3a2060;
+  }
+
   /* Mobile touch controls */
   #touch-controls {
     display: none;
-    width: 100%;
-    max-width: 500px;
-    padding: 8px 6px max(16px, env(safe-area-inset-bottom));
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 6px 6px max(8px, env(safe-area-inset-bottom));
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
@@ -75,7 +135,7 @@
     display: flex;
     justify-content: center;
     gap: 12px;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
   }
   .touch-top-row button {
     background: rgba(25,10,50,0.85);
@@ -98,12 +158,12 @@
     display: flex;
     justify-content: space-between;
     background: rgba(180, 40, 120, 0.25);
-    border-radius: 18px;
-    padding: 10px;
+    border-radius: 14px;
+    padding: 8px;
   }
   .touch-zone {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
   .touch-left { grid-template-columns: repeat(2, 1fr); }
   .touch-right { grid-template-columns: repeat(2, 1fr); }
@@ -112,9 +172,9 @@
     color: #baa8d0;
     border: 1.5px solid #3a2060;
     border-radius: 12px;
-    font-size: 22px;
-    min-width: 52px;
-    height: 54px;
+    font-size: 20px;
+    min-width: 48px;
+    height: 46px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -141,10 +201,11 @@
       flex-direction: column;
       justify-content: flex-start;
       align-items: center;
-      padding-top: 8px;
+      padding: 0;
       gap: 0;
       overflow: hidden;
     }
+    #mobile-hud { display: flex; }
     #touch-controls { display: block; }
     canvas { touch-action: manipulation; }
     #toggles { display: none !important; }
@@ -152,6 +213,24 @@
 </style>
 </head>
 <body>
+<div id="mobile-hud">
+  <div class="hud-zone">
+    <canvas id="hold-mini" width="60" height="48"></canvas>
+    <span class="hud-label">HOLD</span>
+  </div>
+  <div class="hud-center">
+    <span id="hud-score">0</span>
+    <div class="hud-sub">
+      <span id="hud-level">LV 1</span>
+      <span class="hud-dot"></span>
+      <span id="hud-lines">0 lines</span>
+    </div>
+  </div>
+  <div class="hud-zone">
+    <canvas id="next-mini" width="60" height="48"></canvas>
+    <span class="hud-label">NEXT</span>
+  </div>
+</div>
 <div id="wrapper">
   <canvas id="game"></canvas>
   <div id="toggles" class="hidden">
@@ -200,6 +279,10 @@ const CANVAS_H = FIELD_H + CELL * 4; // extra space below for info
 // Offsets for playfield on canvas
 const FIELD_X = PANEL_W + MARGIN;
 const FIELD_Y = CELL;
+
+// Mobile layout: canvas shows field only
+const MOBILE_CANVAS_W = FIELD_W;           // 300
+const MOBILE_CANVAS_H = FIELD_H + CELL;    // 630
 
 // Timing (ms)
 const LOCK_DELAY = 500;
@@ -328,9 +411,6 @@ function spawnY(type) {
    ============================================ */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-canvas.width = CANVAS_W;
-canvas.height = CANVAS_H;
-
 let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
 // Also detect mobile layout via CSS media query (covers emulators and small screens)
 function checkMobileLayout() {
@@ -339,14 +419,33 @@ function checkMobileLayout() {
 }
 if (!isMobile && checkMobileLayout()) isMobile = true;
 
+// Set canvas internal resolution based on platform
+if (isMobile) {
+  canvas.width = MOBILE_CANVAS_W;
+  canvas.height = MOBILE_CANVAS_H;
+} else {
+  canvas.width = CANVAS_W;
+  canvas.height = CANVAS_H;
+}
+
 function handleResize() {
-  const maxW = window.innerWidth * 0.95;
-  let maxH = window.innerHeight * 0.95;
-  // On mobile, reserve space for touch controls
   if (isMobile) {
     const tc = document.getElementById('touch-controls');
-    if (tc) maxH = (window.innerHeight - tc.offsetHeight - 16) * 0.95;
+    const hud = document.getElementById('mobile-hud');
+    const tcH = tc ? tc.offsetHeight : 0;
+    const hudH = hud ? hud.offsetHeight : 0;
+    const maxH = window.innerHeight - tcH - hudH - 4;
+    const maxW = window.innerWidth;
+    document.body.style.paddingBottom = tcH + 'px';
+    const scaleX = maxW / MOBILE_CANVAS_W;
+    const scaleY = maxH / MOBILE_CANVAS_H;
+    const scale = Math.min(scaleX, scaleY, 2);
+    canvas.style.width = (MOBILE_CANVAS_W * scale) + 'px';
+    canvas.style.height = (MOBILE_CANVAS_H * scale) + 'px';
+    return;
   }
+  const maxW = window.innerWidth;
+  const maxH = window.innerHeight * 0.95;
   const scaleX = maxW / CANVAS_W;
   const scaleY = maxH / CANVAS_H;
   const scale = Math.min(scaleX, scaleY, 2);
@@ -1496,86 +1595,88 @@ function drawActionTexts() {
 }
 
 function drawOverlay(title, subtitle) {
+  const cw = isMobile ? MOBILE_CANVAS_W : CANVAS_W;
+  const ch = isMobile ? MOBILE_CANVAS_H : CANVAS_H;
   ctx.fillStyle = 'rgba(15,8,32,0.88)';
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillRect(0, 0, cw, ch);
 
   ctx.textAlign = 'center';
   ctx.fillStyle = C_TEXT;
   ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(title, CANVAS_W / 2, CANVAS_H / 2 - 20);
+  ctx.fillText(title, cw / 2, ch / 2 - 20);
 
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(subtitle, CANVAS_W / 2, CANVAS_H / 2 + 20);
+  ctx.fillText(subtitle, cw / 2, ch / 2 + 20);
 }
 
 
 function drawMenuScreen() {
-  const cx = CANVAS_W / 2;
+  const cw = isMobile ? MOBILE_CANVAS_W : CANVAS_W;
+  const ch = isMobile ? MOBILE_CANVAS_H : CANVAS_H;
+  const cx = cw / 2;
 
   // Subtle gradient background
-  const bgGrad = ctx.createLinearGradient(0, 0, CANVAS_W, CANVAS_H);
+  const bgGrad = ctx.createLinearGradient(0, 0, cw, ch);
   bgGrad.addColorStop(0, '#0f0820');
   bgGrad.addColorStop(0.5, '#1a0e30');
   bgGrad.addColorStop(1, '#0f0820');
   ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillRect(0, 0, cw, ch);
 
   // Decorative horizontal line — magenta accent
-  const lineY = CANVAS_H * 0.30;
-  const lineGrad = ctx.createLinearGradient(CANVAS_W * 0.15, 0, CANVAS_W * 0.85, 0);
+  const lineY = ch * 0.22;
+  const lineGrad = ctx.createLinearGradient(cw * 0.15, 0, cw * 0.85, 0);
   lineGrad.addColorStop(0, 'rgba(242,61,126,0)');
   lineGrad.addColorStop(0.3, 'rgba(242,61,126,0.4)');
   lineGrad.addColorStop(0.5, 'rgba(242,61,126,0.6)');
   lineGrad.addColorStop(0.7, 'rgba(242,61,126,0.4)');
   lineGrad.addColorStop(1, 'rgba(242,61,126,0)');
   ctx.fillStyle = lineGrad;
-  ctx.fillRect(CANVAS_W * 0.15, lineY, CANVAS_W * 0.7, 1.5);
+  ctx.fillRect(cw * 0.15, lineY, cw * 0.7, 1.5);
 
   // Title
   ctx.textAlign = 'center';
-  ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  // Title gradient effect via two layers
+  ctx.font = (isMobile ? 'bold 36px' : 'bold 48px') + ' -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.fillStyle = '#f0e8ff';
-  ctx.fillText('TETRIS', cx, CANVAS_H * 0.26);
+  ctx.fillText('TETRIS', cx, ch * 0.18);
 
   // Bottom decorative line
-  const lineY2 = CANVAS_H * 0.30 + 4;
+  const lineY2 = ch * 0.22 + 4;
   ctx.fillStyle = lineGrad;
-  ctx.fillRect(CANVAS_W * 0.15, lineY2, CANVAS_W * 0.7, 1);
+  ctx.fillRect(cw * 0.15, lineY2, cw * 0.7, 1);
 
   // "Press SPACE to start" — pulsing
   const pulse = 0.5 + Math.sin(Date.now() / 600) * 0.3;
   ctx.globalAlpha = pulse;
   ctx.fillStyle = C_TEXT;
   ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(isMobile ? 'Tap to start' : 'Press SPACE to start', cx, CANVAS_H * 0.38);
+  ctx.fillText(isMobile ? 'Tap to start' : 'Press SPACE to start', cx, ch * 0.28);
   ctx.globalAlpha = 1;
 
   // Level selector
   ctx.fillStyle = '#f23d7e';
   ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText((isMobile ? 'Use ◀▶  ' : '◄  ') + 'LEVEL ' + startLevel + (isMobile ? '' : '  ►'), cx, CANVAS_H * 0.46);
+  ctx.fillText((isMobile ? 'Use ◀▶  ' : '◄  ') + 'LEVEL ' + startLevel + (isMobile ? '' : '  ►'), cx, ch * 0.35);
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
-  ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', cx, CANVAS_H * 0.50);
+  ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', cx, ch * 0.39);
 
   // Controls section
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('CONTROLS', cx, CANVAS_H * 0.58);
+  ctx.fillText('CONTROLS', cx, ch * 0.46);
 
   // Thin separator
   ctx.fillStyle = 'rgba(130,50,180,0.2)';
-  ctx.fillRect(cx - 80, CANVAS_H * 0.59, 160, 1);
+  ctx.fillRect(cx - 80, ch * 0.47, 160, 1);
 
   const controlLines = isMobile ? [
     ['◀ ▶', 'Move'],
     ['▼', 'Soft Drop'],
     ['↻ ↺', 'Rotate'],
     ['⇊', 'Hard Drop'],
-    ['HOLD', 'Hold Piece'],
   ] : [
     ['← →', 'Move'],
     ['↓', 'Soft Drop'],
@@ -1586,15 +1687,13 @@ function drawMenuScreen() {
     ['P / ESC', 'Pause'],
     ['Q', 'Quit to Menu'],
   ];
-  const ctrlStartY = CANVAS_H * 0.62;
+  const ctrlStartY = ch * 0.50;
   ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   for (let i = 0; i < controlLines.length; i++) {
     const y = ctrlStartY + i * 17;
-    // Key
     ctx.fillStyle = '#f0e8ff';
     ctx.textAlign = 'right';
     ctx.fillText(controlLines[i][0], cx - 10, y);
-    // Action
     ctx.fillStyle = C_TEXT_DIM;
     ctx.textAlign = 'left';
     ctx.fillText(controlLines[i][1], cx + 10, y);
@@ -1605,21 +1704,24 @@ function drawMenuScreen() {
     ctx.textAlign = 'center';
     ctx.fillStyle = C_TEXT_DIM;
     ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('HIGH SCORE', cx, CANVAS_H * 0.92);
+    ctx.fillText('HIGH SCORE', cx, ch * 0.92);
     ctx.fillStyle = '#f23d7e';
     ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(highScore.toLocaleString(), cx, CANVAS_H * 0.96);
+    ctx.fillText(highScore.toLocaleString(), cx, ch * 0.96);
   }
 }
 
 function render() {
+  const cw = isMobile ? MOBILE_CANVAS_W : CANVAS_W;
+  const ch = isMobile ? MOBILE_CANVAS_H : CANVAS_H;
+
   // Clear with subtle gradient
-  const canvasGrad = ctx.createLinearGradient(0, 0, CANVAS_W, CANVAS_H);
+  const canvasGrad = ctx.createLinearGradient(0, 0, cw, ch);
   canvasGrad.addColorStop(0, '#0d0720');
   canvasGrad.addColorStop(0.5, C_BG);
   canvasGrad.addColorStop(1, '#0d0720');
   ctx.fillStyle = canvasGrad;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillRect(0, 0, cw, ch);
 
   // Show/hide toggle buttons based on phase
   const togglesEl = document.getElementById('toggles');
@@ -1631,6 +1733,9 @@ function render() {
     return;
   }
 
+  // Mobile: translate so FIELD_X maps to x=0 on canvas
+  if (isMobile) ctx.translate(-FIELD_X, 0);
+
   // Draw game elements
   drawPlayfield();
   drawBoard();
@@ -1640,15 +1745,23 @@ function render() {
   drawParticles();
   drawScorePops();
   drawActionTexts();
-  drawHoldPanel();
-  drawNextPanel();
-  drawScorePanel();
+
+  // Desktop only: draw canvas-based panels
+  if (!isMobile) {
+    drawHoldPanel();
+    drawNextPanel();
+    drawScorePanel();
+  }
+
+  // Undo translate before overlays
+  if (isMobile) ctx.translate(FIELD_X, 0);
 
   if (phase === 'paused') {
     drawOverlay('PAUSED', isMobile ? 'Use buttons below' : 'P to resume  /  Q to quit');
   }
 
   if (phase === 'gameover') {
+    if (isMobile) ctx.translate(-FIELD_X, 0);
     // Darken overlay
     ctx.fillStyle = 'rgba(15,8,32,0.82)';
     ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
@@ -1671,11 +1784,58 @@ function render() {
     ctx.fillStyle = C_TEXT_DIM;
     ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText(isMobile ? 'Tap to play again' : 'Press SPACE to play again', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 70);
+    if (isMobile) ctx.translate(FIELD_X, 0);
   }
+
+  // Update mobile HUD with current game state
+  if (isMobile) updateMobileHUD();
 }
 
 /* ============================================
-   SECTION 13A: MOBILE TOUCH CONTROLS
+   SECTION 13A: MOBILE HUD
+   ============================================ */
+function drawMiniPiece(canvasId, type) {
+  const mc = document.getElementById(canvasId);
+  if (!mc) return;
+  const mctx = mc.getContext('2d');
+  mctx.clearRect(0, 0, mc.width, mc.height);
+  if (!type) return;
+  const miniCell = 12;
+  const shape = getShape(type, 0);
+  const sz = shape.length;
+  let minR = sz, maxR = 0, minC = sz, maxC = 0;
+  for (let r = 0; r < sz; r++)
+    for (let c = 0; c < sz; c++)
+      if (shape[r][c]) { minR = Math.min(minR, r); maxR = Math.max(maxR, r); minC = Math.min(minC, c); maxC = Math.max(maxC, c); }
+  const pw = (maxC - minC + 1) * miniCell;
+  const ph = (maxR - minR + 1) * miniCell;
+  const ox = (mc.width - pw) / 2;
+  const oy = (mc.height - ph) / 2;
+  for (let r = minR; r <= maxR; r++)
+    for (let c = minC; c <= maxC; c++)
+      if (shape[r][c]) {
+        const px = ox + (c - minC) * miniCell;
+        const py = oy + (r - minR) * miniCell;
+        mctx.fillStyle = PIECE_COLORS[type];
+        mctx.fillRect(px + 1, py + 1, miniCell - 2, miniCell - 2);
+        mctx.fillStyle = 'rgba(255,255,255,0.15)';
+        mctx.fillRect(px + 1, py + 1, miniCell - 2, 2);
+      }
+}
+
+function updateMobileHUD() {
+  const s = document.getElementById('hud-score');
+  const l = document.getElementById('hud-level');
+  const n = document.getElementById('hud-lines');
+  if (s) s.textContent = score.toLocaleString();
+  if (l) l.textContent = 'LV ' + level;
+  if (n) n.textContent = lines + ' lines';
+  drawMiniPiece('hold-mini', holdType);
+  drawMiniPiece('next-mini', nextQueue && nextQueue.length > 0 ? nextQueue[0] : null);
+}
+
+/* ============================================
+   SECTION 13B: MOBILE TOUCH CONTROLS
    ============================================ */
 function setupTouchControls() {
   const mapping = {
@@ -1770,6 +1930,16 @@ function updateTouchUI() {
   const pauseBtn = document.getElementById('tc-pause');
   if (quitBtn) quitBtn.style.display = (phase === 'paused') ? '' : 'none';
   if (pauseBtn) pauseBtn.textContent = (phase === 'paused') ? '▶ Resume' : '⏸ Pause';
+  // Show/hide HUD based on game phase
+  const hud = document.getElementById('mobile-hud');
+  if (hud) {
+    const showHud = (phase === 'playing' || phase === 'paused' || phase === 'lineclear');
+    const currentlyShown = getComputedStyle(hud).display !== 'none';
+    if (currentlyShown !== showHud) {
+      hud.style.display = showHud ? 'flex' : 'none';
+      handleResize();
+    }
+  }
 }
 
 if (isMobile) setupTouchControls();
