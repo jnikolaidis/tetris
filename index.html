@@ -60,6 +60,95 @@
     border-color: rgba(242,61,126,0.3);
     background: rgba(242,61,126,0.08);
   }
+
+  /* Mobile touch controls */
+  #touch-controls {
+    display: none;
+    width: 100%;
+    max-width: 500px;
+    padding: 8px 6px max(16px, env(safe-area-inset-bottom));
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .touch-top-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .touch-top-row button {
+    background: rgba(25,10,50,0.85);
+    color: #7a6a9a;
+    border: 1px solid #3a2060;
+    border-radius: 8px;
+    font: bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 6px 20px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .touch-top-row button:active {
+    background: rgba(242,61,126,0.15);
+    border-color: rgba(242,61,126,0.5);
+    color: #f23d7e;
+  }
+  .touch-main {
+    display: flex;
+    justify-content: space-between;
+    background: rgba(180, 40, 120, 0.25);
+    border-radius: 18px;
+    padding: 10px;
+  }
+  .touch-zone {
+    display: grid;
+    gap: 8px;
+  }
+  .touch-left { grid-template-columns: repeat(2, 1fr); }
+  .touch-right { grid-template-columns: repeat(2, 1fr); }
+  .tc-btn {
+    background: rgba(25,10,50,0.85);
+    color: #baa8d0;
+    border: 1.5px solid #3a2060;
+    border-radius: 12px;
+    font-size: 22px;
+    min-width: 52px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    cursor: pointer;
+  }
+  .tc-btn:active, .tc-btn.pressed {
+    background: rgba(242,61,126,0.18);
+    border-color: rgba(242,61,126,0.5);
+    color: #f23d7e;
+    box-shadow: 0 0 12px rgba(242,61,126,0.2);
+  }
+  .tc-btn .tc-label {
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+  @media (pointer: coarse), (max-width: 600px) {
+    body {
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      padding-top: 8px;
+      gap: 0;
+      overflow: hidden;
+    }
+    #touch-controls { display: block; }
+    canvas { touch-action: manipulation; }
+    #toggles { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -70,6 +159,24 @@
     <button id="btn-ghost" onclick="toggleFeature('ghost',this)">👻 Ghost</button>
     <button id="btn-next" class="on" onclick="toggleFeature('next',this)">⏭ Next</button>
     <button id="btn-hold" class="on" onclick="toggleFeature('hold',this)">📦 Hold</button>
+  </div>
+</div>
+<div id="touch-controls">
+  <div class="touch-top-row">
+    <button id="tc-pause">⏸ Pause</button>
+    <button id="tc-quit" style="display:none">✕ Quit</button>
+  </div>
+  <div class="touch-main">
+    <div class="touch-zone touch-left">
+      <button id="tc-ccw" class="tc-btn">↺</button>
+      <button id="tc-cw" class="tc-btn">↻</button>
+      <button id="tc-hard" class="tc-btn" style="grid-column: span 2">⇊</button>
+    </div>
+    <div class="touch-zone touch-right">
+      <button id="tc-left" class="tc-btn">◀</button>
+      <button id="tc-right" class="tc-btn">▶</button>
+      <button id="tc-down" class="tc-btn" style="grid-column: span 2">▼</button>
+    </div>
   </div>
 </div>
 <script>
@@ -224,9 +331,22 @@ const ctx = canvas.getContext('2d');
 canvas.width = CANVAS_W;
 canvas.height = CANVAS_H;
 
+let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
+// Also detect mobile layout via CSS media query (covers emulators and small screens)
+function checkMobileLayout() {
+  const tc = document.getElementById('touch-controls');
+  return tc && getComputedStyle(tc).display !== 'none';
+}
+if (!isMobile && checkMobileLayout()) isMobile = true;
+
 function handleResize() {
   const maxW = window.innerWidth * 0.95;
-  const maxH = window.innerHeight * 0.95;
+  let maxH = window.innerHeight * 0.95;
+  // On mobile, reserve space for touch controls
+  if (isMobile) {
+    const tc = document.getElementById('touch-controls');
+    if (tc) maxH = (window.innerHeight - tc.offsetHeight - 16) * 0.95;
+  }
   const scaleX = maxW / CANVAS_W;
   const scaleY = maxH / CANVAS_H;
   const scale = Math.min(scaleX, scaleY, 2);
@@ -1429,13 +1549,13 @@ function drawMenuScreen() {
   ctx.globalAlpha = pulse;
   ctx.fillStyle = C_TEXT;
   ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('Press SPACE to start', cx, CANVAS_H * 0.38);
+  ctx.fillText(isMobile ? 'Tap to start' : 'Press SPACE to start', cx, CANVAS_H * 0.38);
   ctx.globalAlpha = 1;
 
   // Level selector
   ctx.fillStyle = '#f23d7e';
   ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('◄  LEVEL ' + startLevel + '  ►', cx, CANVAS_H * 0.46);
+  ctx.fillText((isMobile ? 'Use ◀▶  ' : '◄  ') + 'LEVEL ' + startLevel + (isMobile ? '' : '  ►'), cx, CANVAS_H * 0.46);
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
@@ -1450,7 +1570,13 @@ function drawMenuScreen() {
   ctx.fillStyle = 'rgba(130,50,180,0.2)';
   ctx.fillRect(cx - 80, CANVAS_H * 0.59, 160, 1);
 
-  const controlLines = [
+  const controlLines = isMobile ? [
+    ['◀ ▶', 'Move'],
+    ['▼', 'Soft Drop'],
+    ['↻ ↺', 'Rotate'],
+    ['⇊', 'Hard Drop'],
+    ['HOLD', 'Hold Piece'],
+  ] : [
     ['← →', 'Move'],
     ['↓', 'Soft Drop'],
     ['↑ / X', 'Rotate CW'],
@@ -1498,6 +1624,7 @@ function render() {
   // Show/hide toggle buttons based on phase
   const togglesEl = document.getElementById('toggles');
   if (togglesEl) togglesEl.classList.toggle('hidden', phase === 'menu');
+  updateTouchUI();
 
   if (phase === 'menu') {
     drawMenuScreen();
@@ -1518,7 +1645,7 @@ function render() {
   drawScorePanel();
 
   if (phase === 'paused') {
-    drawOverlay('PAUSED', 'P to resume  /  Q to quit');
+    drawOverlay('PAUSED', isMobile ? 'Use buttons below' : 'P to resume  /  Q to quit');
   }
 
   if (phase === 'gameover') {
@@ -1543,9 +1670,109 @@ function render() {
 
     ctx.fillStyle = C_TEXT_DIM;
     ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('Press SPACE to play again', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 70);
+    ctx.fillText(isMobile ? 'Tap to play again' : 'Press SPACE to play again', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 70);
   }
 }
+
+/* ============================================
+   SECTION 13A: MOBILE TOUCH CONTROLS
+   ============================================ */
+function setupTouchControls() {
+  const mapping = {
+    'tc-left': 'ArrowLeft',
+    'tc-right': 'ArrowRight',
+    'tc-down': 'ArrowDown',
+    'tc-cw': 'ArrowUp',
+    'tc-ccw': 'KeyZ',
+    'tc-hard': 'Space',
+    'tc-hold': 'KeyC',
+  };
+
+  for (const [btnId, keyCode] of Object.entries(mapping)) {
+    const btn = document.getElementById(btnId);
+    if (!btn) continue;
+
+    function pressKey() {
+      keys[keyCode] = true;
+      justPressed[keyCode] = true;
+      btn.classList.add('pressed');
+      if (features.sound && !audioCtx) initAudio();
+    }
+    function releaseKey() {
+      keys[keyCode] = false;
+      if (keyCode === 'ArrowLeft') { dasLeft = false; dasLeftTimer = 0; arrLeftTimer = 0; }
+      if (keyCode === 'ArrowRight') { dasRight = false; dasRightTimer = 0; arrRightTimer = 0; }
+      btn.classList.remove('pressed');
+    }
+
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); pressKey(); }, { passive: false });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); releaseKey(); }, { passive: false });
+    btn.addEventListener('touchcancel', releaseKey);
+
+    // Mouse support (emulators, touchscreen laptops)
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); pressKey(); });
+    btn.addEventListener('mouseup', (e) => { e.preventDefault(); releaseKey(); });
+    btn.addEventListener('mouseleave', () => { if (btn.classList.contains('pressed')) releaseKey(); });
+  }
+
+  // Pause button
+  const pauseBtn = document.getElementById('tc-pause');
+  if (pauseBtn) {
+    function togglePause(e) {
+      e.preventDefault();
+      if (phase === 'playing') phase = 'paused';
+      else if (phase === 'paused') phase = 'playing';
+    }
+    pauseBtn.addEventListener('touchstart', togglePause, { passive: false });
+    pauseBtn.addEventListener('click', togglePause);
+  }
+
+  // Quit button (visible only during pause)
+  const quitBtn = document.getElementById('tc-quit');
+  if (quitBtn) {
+    function handleQuit(e) {
+      e.preventDefault();
+      if (phase === 'paused') {
+        if (score > highScore) { highScore = score; saveHighScore(highScore); }
+        phase = 'menu';
+      }
+    }
+    quitBtn.addEventListener('touchstart', handleQuit, { passive: false });
+    quitBtn.addEventListener('click', handleQuit);
+  }
+
+  // Canvas tap/click for menu/gameover start
+  function handleCanvasTap(e) {
+    e.preventDefault();
+    if (phase === 'menu' || phase === 'gameover') {
+      justPressed['Space'] = true;
+      keys['Space'] = true;
+      setTimeout(() => { keys['Space'] = false; }, 100);
+    }
+    if (features.sound && !audioCtx) initAudio();
+  }
+  canvas.addEventListener('touchstart', handleCanvasTap, { passive: false });
+  canvas.addEventListener('click', (e) => {
+    if (phase === 'menu' || phase === 'gameover') {
+      justPressed['Space'] = true;
+      keys['Space'] = true;
+      setTimeout(() => { keys['Space'] = false; }, 100);
+    }
+  });
+
+  // Re-measure after touch controls render
+  requestAnimationFrame(handleResize);
+}
+
+function updateTouchUI() {
+  if (!isMobile) return;
+  const quitBtn = document.getElementById('tc-quit');
+  const pauseBtn = document.getElementById('tc-pause');
+  if (quitBtn) quitBtn.style.display = (phase === 'paused') ? '' : 'none';
+  if (pauseBtn) pauseBtn.textContent = (phase === 'paused') ? '▶ Resume' : '⏸ Pause';
+}
+
+if (isMobile) setupTouchControls();
 
 /* ============================================
    SECTION 13: GAME LOOP
