@@ -259,13 +259,237 @@
     </div>
   </div>
 </div>
-<script src="tetris-core.js"></script>
 <script>
 /* ============================================
-   SECTION 1: LAYOUT & RENDER CONSTANTS
-   Pure game constants (COLS, ROWS, HIDDEN_ROWS, SHAPES, KICKS_*, timing
-   constants, helpers, scoring, T-spin) live in tetris-core.js, loaded above.
-   Only pixel/layout/render values are kept here.
+   SECTION 1: GAME CONSTANTS, TETROMINOES & PURE LOGIC
+   ============================================ */
+const COLS = 10;
+const ROWS = 24;            // 4 hidden + 20 visible
+const VISIBLE_ROWS = 20;
+const HIDDEN_ROWS = 4;
+
+// Timing (ms)
+const LOCK_DELAY = 500;
+const MAX_LOCK_RESETS = 15;
+const DAS_DELAY = 167;
+const ARR_INTERVAL = 33;
+const LINE_CLEAR_TIME = 300;
+
+// Piece type index: I=1, O=2, T=3, S=4, Z=5, J=6, L=7
+const PIECE_NAMES = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+// Rotation states for each piece (4 states each) — standard SRS.
+const SHAPES = {
+  1: [ // I
+    [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]],
+    [[0,0,0,0],[0,0,0,0],[1,1,1,1],[0,0,0,0]],
+    [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]],
+  ],
+  2: [ // O
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+  ],
+  3: [ // T
+    [[0,1,0],[1,1,1],[0,0,0]],
+    [[0,1,0],[0,1,1],[0,1,0]],
+    [[0,0,0],[1,1,1],[0,1,0]],
+    [[0,1,0],[1,1,0],[0,1,0]],
+  ],
+  4: [ // S
+    [[0,1,1],[1,1,0],[0,0,0]],
+    [[0,1,0],[0,1,1],[0,0,1]],
+    [[0,0,0],[0,1,1],[1,1,0]],
+    [[1,0,0],[1,1,0],[0,1,0]],
+  ],
+  5: [ // Z
+    [[1,1,0],[0,1,1],[0,0,0]],
+    [[0,0,1],[0,1,1],[0,1,0]],
+    [[0,0,0],[1,1,0],[0,1,1]],
+    [[0,1,0],[1,1,0],[1,0,0]],
+  ],
+  6: [ // J
+    [[1,0,0],[1,1,1],[0,0,0]],
+    [[0,1,1],[0,1,0],[0,1,0]],
+    [[0,0,0],[1,1,1],[0,0,1]],
+    [[0,1,0],[0,1,0],[1,1,0]],
+  ],
+  7: [ // L
+    [[0,0,1],[1,1,1],[0,0,0]],
+    [[0,1,0],[0,1,0],[0,1,1]],
+    [[0,0,0],[1,1,1],[1,0,0]],
+    [[1,1,0],[0,1,0],[0,1,0]],
+  ],
+};
+
+// SRS Wall Kick Data. Offsets: [dx, dy] where +x=right, +y=down (board coords).
+function getShape(type, rot) {
+  return SHAPES[type][rot];
+}
+
+const KICKS_JLSTZ = {
+  '0>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
+  '1>0': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
+  '1>2': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
+  '2>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
+  '2>3': [[ 0, 0],[ 1, 0],[ 1,-1],[ 0, 2],[ 1, 2]],
+  '3>2': [[ 0, 0],[-1, 0],[-1, 1],[ 0,-2],[-1,-2]],
+  '3>0': [[ 0, 0],[-1, 0],[-1, 1],[ 0,-2],[-1,-2]],
+  '0>3': [[ 0, 0],[ 1, 0],[ 1,-1],[ 0, 2],[ 1, 2]],
+};
+
+const KICKS_I = {
+  '0>1': [[ 0, 0],[-2, 0],[ 1, 0],[-2, 1],[ 1,-2]],
+  '1>0': [[ 0, 0],[ 2, 0],[-1, 0],[ 2,-1],[-1, 2]],
+  '1>2': [[ 0, 0],[-1, 0],[ 2, 0],[-1,-2],[ 2, 1]],
+  '2>1': [[ 0, 0],[ 1, 0],[-2, 0],[ 1, 2],[-2,-1]],
+  '2>3': [[ 0, 0],[ 2, 0],[-1, 0],[ 2,-1],[-1, 2]],
+  '3>2': [[ 0, 0],[-2, 0],[ 1, 0],[-2, 1],[ 1,-2]],
+  '3>0': [[ 0, 0],[ 1, 0],[-2, 0],[ 1, 2],[-2,-1]],
+  '0>3': [[ 0, 0],[-1, 0],[ 2, 0],[-1,-2],[ 2, 1]],
+};
+
+// Spawn positions (col offset for top-left of bounding box)
+function spawnX(type) {
+  return type === 1 ? 3 : type === 2 ? 4 : 3;
+}
+function spawnY(type) {
+  return type === 1 ? 0 : 2; // I starts higher due to 4x4 box
+}
+
+/* ----- 7-BAG RANDOM GENERATOR ----- */
+function shuffledBag() {
+  const bag = [1, 2, 3, 4, 5, 6, 7];
+  for (let i = bag.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [bag[i], bag[j]] = [bag[j], bag[i]];
+  }
+  return bag;
+}
+
+/* ----- GRAVITY: per-level multiplier (Tetris Guideline formula) ----- */
+function gravityFactor(level) {
+  return Math.pow(0.8 - ((level - 1) * 0.007), level - 1);
+}
+function dropIntervalFor(level) {
+  return gravityFactor(level) * 1000; // ms
+}
+
+/* ----- BOARD HELPERS (pure — board passed explicitly) ----- */
+function makeBoard() {
+  return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+}
+function isValidOn(board, type, rot, px, py) {
+  const shape = SHAPES[type][rot];
+  const size = shape.length;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const bx = px + c;
+      const by = py + r;
+      if (bx < 0 || bx >= COLS || by >= ROWS) return false;
+      if (by < 0) continue; // above board is ok
+      if (board[by][bx] !== 0) return false;
+    }
+  }
+  return true;
+}
+function getFullRowsOf(board) {
+  const full = [];
+  for (let r = HIDDEN_ROWS; r < ROWS; r++) {
+    if (board[r].every(c => c !== 0)) full.push(r);
+  }
+  return full;
+}
+function removeRowsFrom(board, rows) {
+  for (const r of [...rows].sort((a, b) => a - b)) {
+    board.splice(r, 1);
+    board.unshift(new Array(COLS).fill(0));
+  }
+}
+
+/* ----- T-SPIN DETECTION (pure) -----
+   piece: {type, rot, x, y}; lastMove: 'move' | 'rotate' | null */
+function detectTSpin(piece, board, lastMove) {
+  if (!piece || piece.type !== 3) return { tspin: false, mini: false };
+  if (lastMove !== 'rotate') return { tspin: false, mini: false };
+
+  const cx = piece.x + 1;
+  const cy = piece.y + 1;
+  const cornerFilled = (bx, by) =>
+    bx < 0 || bx >= COLS || by < 0 || by >= ROWS || board[by][bx] !== 0;
+
+  const corners = [
+    [cx - 1, cy - 1], [cx + 1, cy - 1],
+    [cx - 1, cy + 1], [cx + 1, cy + 1],
+  ];
+  let filled = 0;
+  for (const [bx, by] of corners) if (cornerFilled(bx, by)) filled++;
+  if (filled < 3) return { tspin: false, mini: false };
+
+  const frontCorners = {
+    0: [[cx - 1, cy - 1], [cx + 1, cy - 1]], // flat side on top
+    1: [[cx + 1, cy - 1], [cx + 1, cy + 1]], // flat side on right
+    2: [[cx - 1, cy + 1], [cx + 1, cy + 1]], // flat side on bottom
+    3: [[cx - 1, cy - 1], [cx - 1, cy + 1]], // flat side on left
+  };
+  let frontFilled = 0;
+  for (const [bx, by] of frontCorners[piece.rot]) if (cornerFilled(bx, by)) frontFilled++;
+
+  if (frontFilled === 2) return { tspin: true, mini: false };
+  return { tspin: false, mini: true };
+}
+
+/* ----- SCORING (pure) -----
+   state: {level, backToBack, combo}
+   returns: {points, backToBack, combo, difficult} */
+function calculateScore(state, numLines, tspin, mini) {
+  const level = state.level;
+  const at = (table, i) => (i < table.length ? table[i] : table[table.length - 1]);
+
+  let base = 0;
+  let difficult = false;
+
+  if (tspin) {
+    difficult = true;
+    base = at([400, 800, 1200, 1600], numLines);
+  } else if (mini) {
+    // T-spin mini is NOT a "difficult" clear (Guideline), so it neither grants
+    // nor consumes back-to-back. Last entry non-zero so a (very rare) mini-triple
+    // doesn't silently score nothing.
+    difficult = false;
+    base = at([100, 200, 400, 400], numLines);
+  } else {
+    base = at([0, 100, 300, 500, 800], numLines);
+    difficult = numLines === 4;
+  }
+
+  let pts = base * level;
+  let backToBack = state.backToBack;
+  let combo = state.combo;
+
+  if (numLines > 0) {
+    // B2B ×1.5 applies only to difficult LINE CLEARS. A 0-line T-spin is not
+    // a line clear, so it scores flat base×level (but still maintains B2B below).
+    if (difficult && backToBack) {
+      pts = Math.floor(pts * 1.5);
+    }
+    backToBack = difficult;
+    combo += 1;
+    pts += 50 * combo * level;
+  } else {
+    combo = -1;
+    // A 0-line T-spin is difficult and maintains the back-to-back chain.
+    if (tspin) backToBack = true;
+  }
+
+  return { points: pts, backToBack, combo, difficult };
+}
+
+/* ============================================
+   SECTION 2: LAYOUT & RENDER CONSTANTS
    ============================================ */
 const CELL = 30;        // pixels per cell
 
@@ -285,8 +509,8 @@ const FIELD_Y = CELL;
 const MOBILE_CANVAS_W = FIELD_W;           // 300
 const MOBILE_CANVAS_H = FIELD_H + CELL;    // 630
 
-// Timing constants (LOCK_DELAY, MAX_LOCK_RESETS, DAS_DELAY, ARR_INTERVAL,
-// LINE_CLEAR_TIME) are defined in tetris-core.js.
+// (Timing constants — LOCK_DELAY, MAX_LOCK_RESETS, DAS_DELAY, ARR_INTERVAL,
+//  LINE_CLEAR_TIME — are defined in Section 1 above.)
 
 // Colors — Omilia-inspired deep purple palette
 const C_BG        = '#0f0820';
@@ -309,9 +533,7 @@ const PIECE_COLORS = {
 // (PIECE_GLOW removed — it was a verbatim duplicate of PIECE_COLORS; use the latter.)
 
 /* ============================================
-   SECTION 2: CANVAS SETUP
-   (Tetromino shapes, SRS kick tables, and spawn helpers now live in
-    tetris-core.js, shared with tests.html.)
+   SECTION 3: CANVAS SETUP
    ============================================ */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -571,8 +793,8 @@ function dequeue() {
 
 /* ============================================
    SECTION 6: BOARD LOGIC
-   The pure helpers (getShape, isValidOn, getFullRowsOf, removeRowsFrom) live
-   in tetris-core.js. The wrappers below bind them to the current game board.
+   The pure helpers (isValidOn, getFullRowsOf, removeRowsFrom) are defined in
+   Section 1. The wrappers below bind them to the current game board.
    ============================================ */
 function isValid(type, rot, px, py) {
   return isValidOn(board, type, rot, px, py);
@@ -762,9 +984,8 @@ function onSurface() {
 
 /* ============================================
    SECTION 8: SCORING & T-SPIN DETECTION
-   The pure implementations (detectTSpin, calculateScore) live in
-   tetris-core.js and are unit-tested in tests.html. Here we bind them to the
-   current game state.
+   The pure implementations (detectTSpin, calculateScore) are defined in
+   Section 1. Here we bind them to the current game state.
    ============================================ */
 function isTSpin() {
   return detectTSpin(activePiece, board, lastMovedOrRotated);

@@ -6,45 +6,28 @@ procedural Web Audio sound effects.
 
 ## Play
 
-No build step. Just open `index.html` in a browser:
+No build step, no dependencies. The entire game is one self-contained file —
+just open `index.html` in a browser:
 
 ```
 open index.html
 ```
 
-Desktop and mobile (touch controls) are both supported.
+You can hand this one file to anyone and they can play. Desktop and mobile
+(touch controls) are both supported.
 
 ## Controls (desktop)
 
 | Key         | Action            |
 |-------------|-------------------|
 | ← →         | Move              |
-| ↓           | Soft drop         |
+| ↓           | Soft drop (+1/cell) |
 | ↑ / X       | Rotate CW         |
 | Z           | Rotate CCW        |
-| Space       | Hard drop         |
+| Space       | Hard drop (+2/cell) |
 | C           | Hold              |
 | P / Esc     | Pause             |
 | Q           | Quit to menu      |
-
-## Tests
-
-Open `tests.html` in a browser to run the unit tests for the core game logic
-(scoring, T-spin detection, board helpers, randomizer, gravity):
-
-```
-open tests.html
-```
-
-Results are printed on the page and also exposed at `window.__testsDone`.
-
-## Project layout
-
-| File             | Purpose                                                        |
-|------------------|----------------------------------------------------------------|
-| `index.html`     | Game: markup + styles + the DOM/render/input/audio glue        |
-| `tetris-core.js` | Pure game logic (constants, shapes, kicks, board, scoring)     |
-| `tests.html`     | Browser-based unit tests for `tetris-core.js`                  |
 
 ## Stack
 
@@ -59,4 +42,4 @@ Results are printed on the page and also exposed at `window.__testsDone`.
   `(0.8 - (level-1) * 0.007) ^ (level-1)` seconds per row.
 - Scoring follows the Guideline: T-spin mini is **not** a difficult clear
   (it neither grants nor consumes back-to-back); a 0-line T-spin is difficult
-  and maintains the back-to-back chain. See `tests.html` for the exact cases.
+  and maintains the back-to-back chain.
