@@ -1,0 +1,2028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Tetris</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #1a0a2e 0%, #2d1548 40%, #3a1850 60%, #2a1040 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  canvas {
+    display: block;
+    image-rendering: auto;
+  }
+  #wrapper {
+    position: relative;
+    display: inline-block;
+  }
+  #toggles {
+    position: absolute;
+    /* Aligned to left panel: x=15..165 on 720px canvas = 2.08%..22.92% */
+    left: 2.08%;
+    width: 20.83%;
+    /* Below score panel: y=490 on 720px canvas → top = 68% */
+    top: 68%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+    transition: opacity 0.2s;
+  }
+  #toggles.hidden { opacity: 0; pointer-events: none; }
+  #toggles button {
+    background: rgba(25,10,50,0.85);
+    color: #7a6a9a;
+    border: 1px solid #3a2060;
+    border-radius: 4px;
+    padding: 5px 0;
+    font: bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+    white-space: nowrap;
+    width: 100%;
+    text-align: center;
+  }
+  #toggles button:hover {
+    border-color: #6a4a90;
+    color: #baa8d0;
+  }
+  #toggles button.on {
+    color: #f23d7e;
+    border-color: rgba(242,61,126,0.3);
+    background: rgba(242,61,126,0.08);
+  }
+
+  /* Mobile HUD */
+  #mobile-hud {
+    display: none;
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(15,8,32,0.95);
+    border-bottom: 1px solid #3a2060;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .hud-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .hud-zone canvas {
+    background: rgba(25,10,50,0.6);
+    border: 1px solid #3a2060;
+    border-radius: 6px;
+  }
+  .hud-label {
+    font-size: 9px;
+    font-weight: bold;
+    color: #7a6a9a;
+    letter-spacing: 1px;
+  }
+  .hud-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #hud-score {
+    font-size: 24px;
+    font-weight: bold;
+    color: #f0e8ff;
+    line-height: 1;
+  }
+  .hud-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .hud-sub span {
+    font-size: 11px;
+    color: #7a6a9a;
+    font-weight: bold;
+  }
+  .hud-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #3a2060;
+  }
+
+  /* Mobile touch controls */
+  #touch-controls {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 6px 6px max(8px, env(safe-area-inset-bottom));
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .touch-top-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .touch-top-row button {
+    background: rgba(25,10,50,0.85);
+    color: #7a6a9a;
+    border: 1px solid #3a2060;
+    border-radius: 8px;
+    font: bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 6px 20px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .touch-top-row button:active {
+    background: rgba(242,61,126,0.15);
+    border-color: rgba(242,61,126,0.5);
+    color: #f23d7e;
+  }
+  .touch-main {
+    display: flex;
+    justify-content: space-between;
+    background: rgba(180, 40, 120, 0.25);
+    border-radius: 14px;
+    padding: 8px;
+  }
+  .touch-zone {
+    display: grid;
+    gap: 6px;
+  }
+  .touch-left { grid-template-columns: repeat(2, 1fr); }
+  .touch-right { grid-template-columns: repeat(2, 1fr); }
+  .tc-btn {
+    background: rgba(25,10,50,0.85);
+    color: #baa8d0;
+    border: 1.5px solid #3a2060;
+    border-radius: 12px;
+    font-size: 20px;
+    min-width: 48px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    cursor: pointer;
+  }
+  .tc-btn:active, .tc-btn.pressed {
+    background: rgba(242,61,126,0.18);
+    border-color: rgba(242,61,126,0.5);
+    color: #f23d7e;
+    box-shadow: 0 0 12px rgba(242,61,126,0.2);
+  }
+  .tc-btn .tc-label {
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+  @media (pointer: coarse), (max-width: 600px) {
+    body {
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 0;
+      gap: 0;
+      overflow: hidden;
+    }
+    #mobile-hud { display: flex; }
+    #touch-controls { display: block; }
+    canvas { touch-action: manipulation; }
+    #toggles { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="mobile-hud">
+  <div class="hud-zone">
+    <canvas id="hold-mini" width="60" height="48"></canvas>
+    <span class="hud-label">HOLD</span>
+  </div>
+  <div class="hud-center">
+    <span id="hud-score">0</span>
+    <div class="hud-sub">
+      <span id="hud-level">LV 1</span>
+      <span class="hud-dot"></span>
+      <span id="hud-lines">0 lines</span>
+    </div>
+  </div>
+  <div class="hud-zone">
+    <canvas id="next-mini" width="60" height="48"></canvas>
+    <span class="hud-label">NEXT</span>
+  </div>
+</div>
+<div id="wrapper">
+  <canvas id="game"></canvas>
+  <div id="toggles" class="hidden">
+    <button id="btn-sound" onclick="toggleFeature('sound',this)">🔇 Sound</button>
+    <button id="btn-ghost" onclick="toggleFeature('ghost',this)">👻 Ghost</button>
+    <button id="btn-next" class="on" onclick="toggleFeature('next',this)">⏭ Next</button>
+    <button id="btn-hold" class="on" onclick="toggleFeature('hold',this)">📦 Hold</button>
+  </div>
+</div>
+<div id="touch-controls">
+  <div class="touch-top-row">
+    <button id="tc-pause">⏸ Pause</button>
+    <button id="tc-hold" style="display:none">📦 Hold</button>
+    <button id="tc-quit" style="display:none">✕ Quit</button>
+  </div>
+  <div class="touch-main">
+    <div class="touch-zone touch-left">
+      <button id="tc-ccw" class="tc-btn">↺</button>
+      <button id="tc-cw" class="tc-btn">↻</button>
+      <button id="tc-hard" class="tc-btn" style="grid-column: span 2">⇊</button>
+    </div>
+    <div class="touch-zone touch-right">
+      <button id="tc-left" class="tc-btn">◀</button>
+      <button id="tc-right" class="tc-btn">▶</button>
+      <button id="tc-down" class="tc-btn" style="grid-column: span 2">▼</button>
+    </div>
+  </div>
+</div>
+<script>
+/* ============================================
+   SECTION 1: GAME CONSTANTS, TETROMINOES & PURE LOGIC
+   ============================================ */
+const COLS = 10;
+const ROWS = 24;            // 4 hidden + 20 visible
+const VISIBLE_ROWS = 20;
+const HIDDEN_ROWS = 4;
+
+// Timing (ms)
+const LOCK_DELAY = 500;
+const MAX_LOCK_RESETS = 15;
+const DAS_DELAY = 167;
+const ARR_INTERVAL = 33;
+const LINE_CLEAR_TIME = 300;
+
+// Piece type index: I=1, O=2, T=3, S=4, Z=5, J=6, L=7
+const PIECE_NAMES = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+// Rotation states for each piece (4 states each) — standard SRS.
+const SHAPES = {
+  1: [ // I
+    [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]],
+    [[0,0,0,0],[0,0,0,0],[1,1,1,1],[0,0,0,0]],
+    [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]],
+  ],
+  2: [ // O
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+  ],
+  3: [ // T
+    [[0,1,0],[1,1,1],[0,0,0]],
+    [[0,1,0],[0,1,1],[0,1,0]],
+    [[0,0,0],[1,1,1],[0,1,0]],
+    [[0,1,0],[1,1,0],[0,1,0]],
+  ],
+  4: [ // S
+    [[0,1,1],[1,1,0],[0,0,0]],
+    [[0,1,0],[0,1,1],[0,0,1]],
+    [[0,0,0],[0,1,1],[1,1,0]],
+    [[1,0,0],[1,1,0],[0,1,0]],
+  ],
+  5: [ // Z
+    [[1,1,0],[0,1,1],[0,0,0]],
+    [[0,0,1],[0,1,1],[0,1,0]],
+    [[0,0,0],[1,1,0],[0,1,1]],
+    [[0,1,0],[1,1,0],[1,0,0]],
+  ],
+  6: [ // J
+    [[1,0,0],[1,1,1],[0,0,0]],
+    [[0,1,1],[0,1,0],[0,1,0]],
+    [[0,0,0],[1,1,1],[0,0,1]],
+    [[0,1,0],[0,1,0],[1,1,0]],
+  ],
+  7: [ // L
+    [[0,0,1],[1,1,1],[0,0,0]],
+    [[0,1,0],[0,1,0],[0,1,1]],
+    [[0,0,0],[1,1,1],[1,0,0]],
+    [[1,1,0],[0,1,0],[0,1,0]],
+  ],
+};
+
+// SRS Wall Kick Data. Offsets: [dx, dy] where +x=right, +y=down (board coords).
+function getShape(type, rot) {
+  return SHAPES[type][rot];
+}
+
+const KICKS_JLSTZ = {
+  '0>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
+  '1>0': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
+  '1>2': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
+  '2>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
+  '2>3': [[ 0, 0],[ 1, 0],[ 1,-1],[ 0, 2],[ 1, 2]],
+  '3>2': [[ 0, 0],[-1, 0],[-1, 1],[ 0,-2],[-1,-2]],
+  '3>0': [[ 0, 0],[-1, 0],[-1, 1],[ 0,-2],[-1,-2]],
+  '0>3': [[ 0, 0],[ 1, 0],[ 1,-1],[ 0, 2],[ 1, 2]],
+};
+
+const KICKS_I = {
+  '0>1': [[ 0, 0],[-2, 0],[ 1, 0],[-2, 1],[ 1,-2]],
+  '1>0': [[ 0, 0],[ 2, 0],[-1, 0],[ 2,-1],[-1, 2]],
+  '1>2': [[ 0, 0],[-1, 0],[ 2, 0],[-1,-2],[ 2, 1]],
+  '2>1': [[ 0, 0],[ 1, 0],[-2, 0],[ 1, 2],[-2,-1]],
+  '2>3': [[ 0, 0],[ 2, 0],[-1, 0],[ 2,-1],[-1, 2]],
+  '3>2': [[ 0, 0],[-2, 0],[ 1, 0],[-2, 1],[ 1,-2]],
+  '3>0': [[ 0, 0],[ 1, 0],[-2, 0],[ 1, 2],[-2,-1]],
+  '0>3': [[ 0, 0],[-1, 0],[ 2, 0],[-1,-2],[ 2, 1]],
+};
+
+// Spawn positions (col offset for top-left of bounding box)
+function spawnX(type) {
+  return type === 1 ? 3 : type === 2 ? 4 : 3;
+}
+function spawnY(type) {
+  return type === 1 ? 0 : 2; // I starts higher due to 4x4 box
+}
+
+/* ----- 7-BAG RANDOM GENERATOR ----- */
+function shuffledBag() {
+  const bag = [1, 2, 3, 4, 5, 6, 7];
+  for (let i = bag.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [bag[i], bag[j]] = [bag[j], bag[i]];
+  }
+  return bag;
+}
+
+/* ----- GRAVITY: per-level multiplier (Tetris Guideline formula) ----- */
+function gravityFactor(level) {
+  return Math.pow(0.8 - ((level - 1) * 0.007), level - 1);
+}
+function dropIntervalFor(level) {
+  return gravityFactor(level) * 1000; // ms
+}
+
+/* ----- BOARD HELPERS (pure — board passed explicitly) ----- */
+function makeBoard() {
+  return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+}
+function isValidOn(board, type, rot, px, py) {
+  const shape = SHAPES[type][rot];
+  const size = shape.length;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const bx = px + c;
+      const by = py + r;
+      if (bx < 0 || bx >= COLS || by >= ROWS) return false;
+      if (by < 0) continue; // above board is ok
+      if (board[by][bx] !== 0) return false;
+    }
+  }
+  return true;
+}
+function getFullRowsOf(board) {
+  const full = [];
+  for (let r = HIDDEN_ROWS; r < ROWS; r++) {
+    if (board[r].every(c => c !== 0)) full.push(r);
+  }
+  return full;
+}
+function removeRowsFrom(board, rows) {
+  for (const r of [...rows].sort((a, b) => a - b)) {
+    board.splice(r, 1);
+    board.unshift(new Array(COLS).fill(0));
+  }
+}
+
+/* ----- T-SPIN DETECTION (pure) -----
+   piece: {type, rot, x, y}; lastMove: 'move' | 'rotate' | null */
+function detectTSpin(piece, board, lastMove) {
+  if (!piece || piece.type !== 3) return { tspin: false, mini: false };
+  if (lastMove !== 'rotate') return { tspin: false, mini: false };
+
+  const cx = piece.x + 1;
+  const cy = piece.y + 1;
+  const cornerFilled = (bx, by) =>
+    bx < 0 || bx >= COLS || by < 0 || by >= ROWS || board[by][bx] !== 0;
+
+  const corners = [
+    [cx - 1, cy - 1], [cx + 1, cy - 1],
+    [cx - 1, cy + 1], [cx + 1, cy + 1],
+  ];
+  let filled = 0;
+  for (const [bx, by] of corners) if (cornerFilled(bx, by)) filled++;
+  if (filled < 3) return { tspin: false, mini: false };
+
+  const frontCorners = {
+    0: [[cx - 1, cy - 1], [cx + 1, cy - 1]], // flat side on top
+    1: [[cx + 1, cy - 1], [cx + 1, cy + 1]], // flat side on right
+    2: [[cx - 1, cy + 1], [cx + 1, cy + 1]], // flat side on bottom
+    3: [[cx - 1, cy - 1], [cx - 1, cy + 1]], // flat side on left
+  };
+  let frontFilled = 0;
+  for (const [bx, by] of frontCorners[piece.rot]) if (cornerFilled(bx, by)) frontFilled++;
+
+  if (frontFilled === 2) return { tspin: true, mini: false };
+  return { tspin: false, mini: true };
+}
+
+/* ----- SCORING (pure) -----
+   state: {level, backToBack, combo}
+   returns: {points, backToBack, combo, difficult} */
+function calculateScore(state, numLines, tspin, mini) {
+  const level = state.level;
+  const at = (table, i) => (i < table.length ? table[i] : table[table.length - 1]);
+
+  let base = 0;
+  let difficult = false;
+
+  if (tspin) {
+    difficult = true;
+    base = at([400, 800, 1200, 1600], numLines);
+  } else if (mini) {
+    // T-spin mini is NOT a "difficult" clear (Guideline), so it neither grants
+    // nor consumes back-to-back. Last entry non-zero so a (very rare) mini-triple
+    // doesn't silently score nothing.
+    difficult = false;
+    base = at([100, 200, 400, 400], numLines);
+  } else {
+    base = at([0, 100, 300, 500, 800], numLines);
+    difficult = numLines === 4;
+  }
+
+  let pts = base * level;
+  let backToBack = state.backToBack;
+  let combo = state.combo;
+
+  if (numLines > 0) {
+    // B2B ×1.5 applies only to difficult LINE CLEARS. A 0-line T-spin is not
+    // a line clear, so it scores flat base×level (but still maintains B2B below).
+    if (difficult && backToBack) {
+      pts = Math.floor(pts * 1.5);
+    }
+    backToBack = difficult;
+    combo += 1;
+    pts += 50 * combo * level;
+  } else {
+    combo = -1;
+    // A 0-line T-spin is difficult and maintains the back-to-back chain.
+    if (tspin) backToBack = true;
+  }
+
+  return { points: pts, backToBack, combo, difficult };
+}
+
+/* ============================================
+   SECTION 2: LAYOUT & RENDER CONSTANTS
+   ============================================ */
+const CELL = 30;        // pixels per cell
+
+// Layout dimensions
+const PANEL_W = 6 * CELL;
+const MARGIN = CELL;
+const FIELD_W = COLS * CELL;
+const FIELD_H = VISIBLE_ROWS * CELL;
+const CANVAS_W = PANEL_W + MARGIN + FIELD_W + MARGIN + PANEL_W;
+const CANVAS_H = FIELD_H + CELL * 4; // extra space below for info
+
+// Offsets for playfield on canvas
+const FIELD_X = PANEL_W + MARGIN;
+const FIELD_Y = CELL;
+
+// Mobile layout: canvas shows field only
+const MOBILE_CANVAS_W = FIELD_W;           // 300
+const MOBILE_CANVAS_H = FIELD_H + CELL;    // 630
+
+// (Timing constants — LOCK_DELAY, MAX_LOCK_RESETS, DAS_DELAY, ARR_INTERVAL,
+//  LINE_CLEAR_TIME — are defined in Section 1 above.)
+
+// Colors — Omilia-inspired deep purple palette
+const C_BG        = '#0f0820';
+const C_FIELD_BG  = '#120a22';
+const C_GRID      = 'rgba(130,50,180,0.06)';
+const C_BORDER    = '#3a2060';
+const C_TEXT      = '#f0e8ff';
+const C_TEXT_DIM  = '#7a6a9a';
+const C_PANEL_BG  = 'rgba(25,10,50,0.8)';
+
+const PIECE_COLORS = {
+  1: '#00e5ff', // I - Cyan
+  2: '#ffea00', // O - Yellow
+  3: '#d500f9', // T - Purple
+  4: '#76ff03', // S - Green
+  5: '#ff1744', // Z - Red
+  6: '#2979ff', // J - Blue
+  7: '#ff9100', // L - Orange
+};
+// (PIECE_GLOW removed — it was a verbatim duplicate of PIECE_COLORS; use the latter.)
+
+/* ============================================
+   SECTION 3: CANVAS SETUP
+   ============================================ */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
+// Also detect mobile layout via CSS media query (covers emulators and small screens)
+function checkMobileLayout() {
+  const tc = document.getElementById('touch-controls');
+  return tc && getComputedStyle(tc).display !== 'none';
+}
+if (!isMobile && checkMobileLayout()) isMobile = true;
+
+// Set canvas internal resolution based on platform
+if (isMobile) {
+  canvas.width = MOBILE_CANVAS_W;
+  canvas.height = MOBILE_CANVAS_H;
+} else {
+  canvas.width = CANVAS_W;
+  canvas.height = CANVAS_H;
+}
+
+function handleResize() {
+  if (isMobile) {
+    const tc = document.getElementById('touch-controls');
+    const hud = document.getElementById('mobile-hud');
+    const tcH = tc ? tc.offsetHeight : 0;
+    const hudH = hud ? hud.offsetHeight : 0;
+    const maxH = window.innerHeight - tcH - hudH - 4;
+    const maxW = window.innerWidth;
+    document.body.style.paddingBottom = tcH + 'px';
+    const scaleX = maxW / MOBILE_CANVAS_W;
+    const scaleY = maxH / MOBILE_CANVAS_H;
+    const scale = Math.min(scaleX, scaleY, 2);
+    canvas.style.width = (MOBILE_CANVAS_W * scale) + 'px';
+    canvas.style.height = (MOBILE_CANVAS_H * scale) + 'px';
+    return;
+  }
+  const maxW = window.innerWidth;
+  const maxH = window.innerHeight * 0.95;
+  const scaleX = maxW / CANVAS_W;
+  const scaleY = maxH / CANVAS_H;
+  const scale = Math.min(scaleX, scaleY, 2);
+  canvas.style.width = (CANVAS_W * scale) + 'px';
+  canvas.style.height = (CANVAS_H * scale) + 'px';
+}
+window.addEventListener('resize', handleResize);
+handleResize();
+
+/* ============================================
+   SECTION 4: GAME STATE
+   ============================================ */
+let board, activePiece, nextQueue, holdType, holdUsed;
+let score, level, lines, combo, backToBack;
+let phase; // 'menu', 'playing', 'paused', 'lineclear', 'gameover'
+let gravityAcc, lockTimer, lockResets;
+let clearingRows, clearAnimTimer;
+let highScore;
+let lastTime;
+let lastMovedOrRotated; // 'move' or 'rotate' — for T-spin detection
+
+// DAS state
+let dasLeft, dasRight, dasLeftTimer, dasRightTimer;
+let arrLeftTimer, arrRightTimer;
+// Soft-drop state — awards +1/cell (Guideline) in the gravity loop while held.
+let softDropping = false;
+
+// Visual effects state
+let particles = [];
+let scorePops = [];       // {text, x, y, timer, duration}
+let actionTexts = [];     // {text, timer, duration} — combo/b2b/tspin notifications
+
+// Feature toggles
+const features = { ghost: false, next: true, hold: true, sound: false };
+let startLevel = 2;
+
+function toggleFeature(name, btn) {
+  features[name] = !features[name];
+  btn.classList.toggle('on', features[name]);
+  // Update sound button emoji
+  if (name === 'sound') {
+    btn.textContent = features.sound ? '🔊 Sound' : '🔇 Sound';
+    if (features.sound) initAudio();
+  }
+  // Prevent button from stealing focus from game
+  btn.blur();
+  canvas.focus();
+}
+
+/* ============================================
+   SOUND ENGINE (Web Audio API)
+   ============================================ */
+let audioCtx = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(name) {
+  if (!features.sound || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  const vol = 0.12;
+
+  if (name === 'move') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square'; osc.frequency.value = 440;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.06);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.06);
+  }
+  else if (name === 'rotate') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square'; osc.frequency.value = 880;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.05);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.05);
+  }
+  else if (name === 'lock') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square'; osc.frequency.value = 220;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.1);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.1);
+  }
+  else if (name === 'drop') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1000, t);
+    osc.frequency.linearRampToValueAtTime(400, t + 0.12);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.12);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.12);
+  }
+  else if (name === 'clear') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(523, t);
+    osc.frequency.linearRampToValueAtTime(784, t + 0.17);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.17);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.17);
+  }
+  else if (name === 'tetris') {
+    const notes = [523, 659, 784];
+    const dur = [0.1, 0.1, 0.15];
+    let offset = 0;
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'square'; osc.frequency.value = notes[i];
+      g.gain.setValueAtTime(vol * 1.2, t + offset);
+      g.gain.linearRampToValueAtTime(0, t + offset + dur[i]);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(t + offset); osc.stop(t + offset + dur[i]);
+      offset += dur[i];
+    }
+  }
+  else if (name === 'levelup') {
+    const notes = [330, 415, 523];
+    const dur = [0.075, 0.075, 0.15];
+    let offset = 0;
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'square'; osc.frequency.value = notes[i];
+      g.gain.setValueAtTime(vol, t + offset);
+      g.gain.linearRampToValueAtTime(0, t + offset + dur[i]);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(t + offset); osc.stop(t + offset + dur[i]);
+      offset += dur[i];
+    }
+  }
+  else if (name === 'gameover') {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(784, t);
+    osc.frequency.linearRampToValueAtTime(262, t + 0.35);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol, t + 0.2);
+    g.gain.linearRampToValueAtTime(0, t + 0.35);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.35);
+  }
+}
+
+// Input tracking
+const keys = {};
+const justPressed = {};
+
+function loadHighScore() {
+  try { return parseInt(localStorage.getItem('tetris_hs')) || 0; } catch { return 0; }
+}
+function saveHighScore(s) {
+  try { localStorage.setItem('tetris_hs', s); } catch {}
+}
+
+function resetGame() {
+  board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+  nextQueue = [];
+  fillQueue();
+  holdType = 0;
+  holdUsed = false;
+  score = 0;
+  level = startLevel;
+  lines = (startLevel - 1) * 10;
+  combo = -1;
+  backToBack = false;
+  gravityAcc = 0;
+  lockTimer = 0;
+  lockResets = 0;
+  clearingRows = [];
+  clearAnimTimer = 0;
+  lastMovedOrRotated = null;
+  particles = [];
+  scorePops = [];
+  actionTexts = [];
+  dasLeft = false; dasRight = false;
+  dasLeftTimer = 0; dasRightTimer = 0;
+  arrLeftTimer = 0; arrRightTimer = 0;
+  activePiece = null;
+  spawnPiece();
+}
+
+/* ============================================
+   SECTION 5: 7-BAG RANDOM GENERATOR
+   ============================================ */
+function shuffledBag() {
+  const bag = [1, 2, 3, 4, 5, 6, 7];
+  for (let i = bag.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [bag[i], bag[j]] = [bag[j], bag[i]];
+  }
+  return bag;
+}
+
+function fillQueue() {
+  while (nextQueue.length < 14) {
+    nextQueue.push(...shuffledBag());
+  }
+}
+
+function dequeue() {
+  const type = nextQueue.shift();
+  fillQueue();
+  return type;
+}
+
+/* ============================================
+   SECTION 6: BOARD LOGIC
+   The pure helpers (isValidOn, getFullRowsOf, removeRowsFrom) are defined in
+   Section 1. The wrappers below bind them to the current game board.
+   ============================================ */
+function isValid(type, rot, px, py) {
+  return isValidOn(board, type, rot, px, py);
+}
+
+function lockPiece() {
+  if (!activePiece) return;
+  const { type, rot, x, y } = activePiece;
+  const shape = getShape(type, rot);
+  const size = shape.length;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const by = y + r;
+      const bx = x + c;
+      if (by >= 0 && by < ROWS && bx >= 0 && bx < COLS) {
+        board[by][bx] = type;
+      }
+    }
+  }
+}
+
+function getFullRows() {
+  return getFullRowsOf(board);
+}
+
+function removeRows(rows) {
+  removeRowsFrom(board, rows);
+}
+
+function ghostY() {
+  if (!activePiece) return 0;
+  const { type, rot, x } = activePiece;
+  let gy = activePiece.y;
+  while (isValid(type, rot, x, gy + 1)) gy++;
+  return gy;
+}
+
+/* ============================================
+   SECTION 7: PIECE MOVEMENT & ROTATION
+   ============================================ */
+function spawnPiece() {
+  const type = dequeue();
+  const rot = 0;
+  const x = spawnX(type);
+  const y = spawnY(type);
+  if (!isValid(type, rot, x, y)) {
+    // Game over
+    activePiece = { type, rot, x, y };
+    lockPiece();
+    phase = 'gameover';
+    playSound('gameover');
+    if (score > highScore) {
+      highScore = score;
+      saveHighScore(highScore);
+    }
+    return;
+  }
+  activePiece = { type, rot, x, y };
+  gravityAcc = 0;
+  lockTimer = 0;
+  lockResets = 0;
+  holdUsed = false;
+  lastMovedOrRotated = null;
+}
+
+function moveLeft() {
+  if (!activePiece) return false;
+  const { type, rot, x, y } = activePiece;
+  if (isValid(type, rot, x - 1, y)) {
+    activePiece.x--;
+    lastMovedOrRotated = 'move';
+    resetLockIfOnSurface();
+    playSound('move');
+    return true;
+  }
+  return false;
+}
+
+function moveRight() {
+  if (!activePiece) return false;
+  const { type, rot, x, y } = activePiece;
+  if (isValid(type, rot, x + 1, y)) {
+    activePiece.x++;
+    lastMovedOrRotated = 'move';
+    resetLockIfOnSurface();
+    playSound('move');
+    return true;
+  }
+  return false;
+}
+
+// Soft drop is handled inline in the gravity loop (update()): while ArrowDown
+// is held, gravity is accelerated and each cell dropped awards +1 point.
+
+function hardDrop() {
+  if (!activePiece) return;
+  const gy = ghostY();
+  score += (gy - activePiece.y) * 2;
+  activePiece.y = gy;
+  // Impact particles at landing position
+  const shape = getShape(activePiece.type, activePiece.rot);
+  const size = shape.length;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const px = FIELD_X + (activePiece.x + c) * CELL + CELL / 2;
+      const py = FIELD_Y + (gy + r - HIDDEN_ROWS) * CELL + CELL;
+      for (let i = 0; i < 3; i++) {
+        particles.push({
+          x: px, y: py,
+          vx: (Math.random() - 0.5) * 3,
+          vy: -Math.random() * 2,
+          life: 200 + Math.random() * 200,
+          maxLife: 300,
+          size: 1.5 + Math.random() * 2,
+          color: PIECE_COLORS[activePiece.type],
+        });
+      }
+    }
+  }
+  playSound('drop');
+  lockAndAdvance();
+}
+
+function rotate(dir) { // dir: 1 = CW, -1 = CCW
+  if (!activePiece) return false;
+  const { type, rot, x, y } = activePiece;
+  if (type === 2) return false; // O doesn't rotate
+  const newRot = (rot + dir + 4) % 4;
+  const kickTable = type === 1 ? KICKS_I : KICKS_JLSTZ;
+  const key = rot + '>' + newRot;
+  const kicks = kickTable[key];
+  if (!kicks) return false;
+  for (const [dx, dy] of kicks) {
+    if (isValid(type, newRot, x + dx, y + dy)) {
+      activePiece.rot = newRot;
+      activePiece.x = x + dx;
+      activePiece.y = y + dy;
+      lastMovedOrRotated = 'rotate';
+      resetLockIfOnSurface();
+      playSound('rotate');
+      return true;
+    }
+  }
+  return false;
+}
+
+function holdPiece() {
+  if (!features.hold) return;
+  if (!activePiece || holdUsed) return;
+  const curType = activePiece.type;
+  if (holdType === 0) {
+    holdType = curType;
+    spawnPiece();
+  } else {
+    const prev = holdType;
+    holdType = curType;
+    const rot = 0;
+    const x = spawnX(prev);
+    const y = spawnY(prev);
+    activePiece = { type: prev, rot, x, y };
+    gravityAcc = 0;
+    lockTimer = 0;
+    lockResets = 0;
+    lastMovedOrRotated = null;
+  }
+  holdUsed = true;
+}
+
+function resetLockIfOnSurface() {
+  if (!activePiece) return;
+  const { type, rot, x, y } = activePiece;
+  if (!isValid(type, rot, x, y + 1)) {
+    if (lockResets < MAX_LOCK_RESETS) {
+      lockTimer = 0;
+      lockResets++;
+    }
+  }
+}
+
+function onSurface() {
+  if (!activePiece) return false;
+  const { type, rot, x, y } = activePiece;
+  return !isValid(type, rot, x, y + 1);
+}
+
+/* ============================================
+   SECTION 8: SCORING & T-SPIN DETECTION
+   The pure implementations (detectTSpin, calculateScore) are defined in
+   Section 1. Here we bind them to the current game state.
+   ============================================ */
+function isTSpin() {
+  return detectTSpin(activePiece, board, lastMovedOrRotated);
+}
+
+function getDropInterval() {
+  return dropIntervalFor(level); // ms
+}
+
+// Applies the score for a clear to the module state and returns the points
+// awarded. Pure logic + side effects on score/backToBack/combo.
+function applyScore(numLines, tspin, mini) {
+  const res = calculateScore(
+    { level, backToBack, combo },
+    numLines, tspin, mini
+  );
+  score += res.points;
+  backToBack = res.backToBack;
+  combo = res.combo;
+  return res.points;
+}
+
+function updateLevel() {
+  level = Math.floor(lines / 10) + 1;
+}
+
+/* ============================================
+   SECTION 9: INPUT HANDLING
+   ============================================ */
+window.addEventListener('keydown', (e) => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+    e.preventDefault();
+  }
+  if (!keys[e.code]) {
+    justPressed[e.code] = true;
+  }
+  keys[e.code] = true;
+});
+
+window.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+  justPressed[e.code] = false;
+  if (e.code === 'ArrowLeft') { dasLeft = false; dasLeftTimer = 0; arrLeftTimer = 0; }
+  if (e.code === 'ArrowRight') { dasRight = false; dasRightTimer = 0; arrRightTimer = 0; }
+});
+
+function processInput(dt) {
+  if (phase === 'menu') {
+    if (justPressed['ArrowLeft']) {
+      startLevel = Math.max(1, startLevel - 1);
+      playSound('move');
+    }
+    if (justPressed['ArrowRight']) {
+      startLevel = Math.min(15, startLevel + 1);
+      playSound('move');
+    }
+    if (justPressed['Space'] || justPressed['Enter']) {
+      phase = 'playing';
+      resetGame();
+    }
+    clearJustPressed();
+    return;
+  }
+
+  if (phase === 'gameover') {
+    if (justPressed['Space'] || justPressed['Enter']) {
+      phase = 'playing';
+      resetGame();
+    }
+    clearJustPressed();
+    return;
+  }
+
+  if (phase === 'paused') {
+    if (justPressed['KeyP'] || justPressed['Escape']) {
+      phase = 'playing';
+    }
+    if (justPressed['KeyQ']) {
+      if (score > highScore) { highScore = score; saveHighScore(highScore); }
+      phase = 'menu';
+    }
+    clearJustPressed();
+    return;
+  }
+
+  if (phase !== 'playing') { clearJustPressed(); return; }
+
+  // Quit to menu
+  if (justPressed['KeyQ']) {
+    if (score > highScore) { highScore = score; saveHighScore(highScore); }
+    phase = 'menu';
+    clearJustPressed();
+    return;
+  }
+
+  // Pause
+  if (justPressed['KeyP'] || justPressed['Escape']) {
+    phase = 'paused';
+    clearJustPressed();
+    return;
+  }
+
+  // Rotate
+  if (justPressed['ArrowUp'] || justPressed['KeyX']) rotate(1);
+  if (justPressed['KeyZ']) rotate(-1);
+
+  // Hard drop
+  if (justPressed['Space']) hardDrop();
+
+  // Hold
+  if (justPressed['KeyC']) holdPiece();
+
+  // Left movement with DAS
+  if (keys['ArrowLeft']) {
+    if (justPressed['ArrowLeft']) {
+      moveLeft();
+      dasLeftTimer = 0;
+      arrLeftTimer = 0;
+    } else {
+      dasLeftTimer += dt;
+      if (dasLeftTimer >= DAS_DELAY) {
+        arrLeftTimer += dt;
+        while (arrLeftTimer >= ARR_INTERVAL) {
+          moveLeft();
+          arrLeftTimer -= ARR_INTERVAL;
+        }
+      }
+    }
+  }
+
+  // Right movement with DAS
+  if (keys['ArrowRight']) {
+    if (justPressed['ArrowRight']) {
+      moveRight();
+      dasRightTimer = 0;
+      arrRightTimer = 0;
+    } else {
+      dasRightTimer += dt;
+      if (dasRightTimer >= DAS_DELAY) {
+        arrRightTimer += dt;
+        while (arrRightTimer >= ARR_INTERVAL) {
+          moveRight();
+          arrRightTimer -= ARR_INTERVAL;
+        }
+      }
+    }
+  }
+
+  // Soft drop (continuous) — accelerate gravity and award +1 per cell dropped.
+  softDropping = !!keys['ArrowDown'];
+  if (softDropping) {
+    gravityAcc += dt * 15; // 15x normal speed for soft drop
+  }
+
+  clearJustPressed();
+}
+
+function clearJustPressed() {
+  for (const k in justPressed) justPressed[k] = false;
+}
+
+/* ============================================
+   SECTION 10: LOCK AND ADVANCE
+   ============================================ */
+function spawnParticles(rows) {
+  for (const row of rows) {
+    const py = FIELD_Y + (row - HIDDEN_ROWS) * CELL + CELL / 2;
+    for (let i = 0; i < 12; i++) {
+      particles.push({
+        x: FIELD_X + Math.random() * FIELD_W,
+        y: py,
+        vx: (Math.random() - 0.5) * 4,
+        vy: (Math.random() - 0.8) * 3,
+        life: 400 + Math.random() * 300,
+        maxLife: 400 + Math.random() * 300,
+        size: 2 + Math.random() * 3,
+        color: Math.random() > 0.5 ? '#f23d7e' : '#ec008c',
+      });
+    }
+  }
+}
+
+function spawnScorePop(pts, label) {
+  if (pts <= 0) return;
+  scorePops.push({
+    text: '+' + pts.toLocaleString(),
+    x: FIELD_X + FIELD_W / 2,
+    y: FIELD_Y + FIELD_H / 2,
+    timer: 0,
+    duration: 800,
+  });
+  if (label) {
+    actionTexts.push({ text: label, timer: 0, duration: 1200 });
+  }
+}
+
+function lockAndAdvance() {
+  const { tspin, mini } = isTSpin();
+  lockPiece();
+  activePiece = null;
+  playSound('lock');
+
+  const full = getFullRows();
+  if (full.length > 0) {
+    const prevLevel = level;
+    const gained = applyScore(full.length, tspin, mini); // updates score/backToBack/combo
+    lines += full.length;
+    updateLevel();
+    clearingRows = full;
+    clearAnimTimer = 0;
+    phase = 'lineclear';
+    if (full.length === 4) playSound('tetris');
+    else playSound('clear');
+    if (level > prevLevel) playSound('levelup');
+
+    // Spawn particles for cleared rows
+    spawnParticles(full);
+
+    // Score pop
+    let label = '';
+    if (tspin) label = 'T-SPIN';
+    else if (mini) label = 'T-SPIN MINI';
+    if (full.length === 4) label = 'TETRIS!';
+    else if (full.length === 3) label = label ? label + ' TRIPLE' : 'TRIPLE';
+    else if (full.length === 2) label = label ? label + ' DOUBLE' : 'DOUBLE';
+    if (combo > 0) label += (label ? ' ' : '') + combo + 'x COMBO';
+    if (backToBack && (full.length === 4 || tspin)) label += ' B2B';
+    spawnScorePop(gained, label);
+  } else {
+    // No lines cleared. A 0-line T-spin / mini still awards its bonus and (for
+    // a full T-spin) maintains back-to-back — handled by applyScore/core.
+    const gained = applyScore(0, tspin, mini);
+    if (gained > 0) spawnScorePop(gained, tspin ? 'T-SPIN' : 'T-SPIN MINI');
+    phase = 'playing';
+    spawnPiece();
+  }
+
+  if (score > highScore) {
+    highScore = score;
+    saveHighScore(highScore);
+  }
+}
+
+/* ============================================
+   SECTION 11: GAME UPDATE
+   ============================================ */
+function updateEffects(dt) {
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.timer = (p.timer || 0) + dt;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.06; // gravity
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  // Update score pops
+  for (let i = scorePops.length - 1; i >= 0; i--) {
+    scorePops[i].timer += dt;
+    if (scorePops[i].timer >= scorePops[i].duration) scorePops.splice(i, 1);
+  }
+  // Update action texts
+  for (let i = actionTexts.length - 1; i >= 0; i--) {
+    actionTexts[i].timer += dt;
+    if (actionTexts[i].timer >= actionTexts[i].duration) actionTexts.splice(i, 1);
+  }
+}
+
+function update(dt) {
+  updateEffects(dt);
+
+  if (phase === 'lineclear') {
+    clearAnimTimer += dt;
+    if (clearAnimTimer >= LINE_CLEAR_TIME) {
+      removeRows(clearingRows);
+      clearingRows = [];
+      phase = 'playing';
+      spawnPiece();
+    }
+    return;
+  }
+
+  if (phase !== 'playing' || !activePiece) return;
+
+  // Gravity
+  gravityAcc += dt;
+  const interval = getDropInterval();
+  while (gravityAcc >= interval) {
+    gravityAcc -= interval;
+    if (isValid(activePiece.type, activePiece.rot, activePiece.x, activePiece.y + 1)) {
+      activePiece.y++;
+      // FIX: soft drop awards +1 point per cell dropped (Tetris Guideline).
+      if (softDropping) score += 1;
+    } else {
+      gravityAcc = 0;
+      break;
+    }
+  }
+
+  // Lock delay
+  if (onSurface()) {
+    lockTimer += dt;
+    if (lockTimer >= LOCK_DELAY) {
+      lockAndAdvance();
+    }
+  } else {
+    lockTimer = 0;
+  }
+}
+
+/* ============================================
+   SECTION 12: RENDERING
+   ============================================ */
+function lighten(hex, amt) {
+  let r = parseInt(hex.slice(1, 3), 16);
+  let g = parseInt(hex.slice(3, 5), 16);
+  let b = parseInt(hex.slice(5, 7), 16);
+  r = Math.min(255, r + amt);
+  g = Math.min(255, g + amt);
+  b = Math.min(255, b + amt);
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawCell(x, y, colorIdx, alpha = 1) {
+  const color = PIECE_COLORS[colorIdx];
+  if (!color) return;
+  const px = x;
+  const py = y;
+
+  ctx.globalAlpha = alpha;
+
+  // Main fill with gradient
+  const grad = ctx.createLinearGradient(px, py, px + CELL, py + CELL);
+  grad.addColorStop(0, lighten(color, 40));
+  grad.addColorStop(1, color);
+  ctx.fillStyle = grad;
+  ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+
+  // Top-left highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillRect(px + 1, py + 1, CELL - 2, 3);
+  ctx.fillRect(px + 1, py + 1, 3, CELL - 2);
+
+  // Bottom-right shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(px + 1, py + CELL - 4, CELL - 2, 3);
+  ctx.fillRect(px + CELL - 4, py + 1, 3, CELL - 2);
+
+  ctx.globalAlpha = 1;
+}
+
+function drawPlayfield() {
+  // Gradient background for field
+  const fieldGrad = ctx.createLinearGradient(FIELD_X, FIELD_Y, FIELD_X, FIELD_Y + FIELD_H);
+  fieldGrad.addColorStop(0, '#100a24');
+  fieldGrad.addColorStop(0.5, C_FIELD_BG);
+  fieldGrad.addColorStop(1, '#0e0820');
+  ctx.fillStyle = fieldGrad;
+  ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
+
+  // Grid lines
+  ctx.strokeStyle = C_GRID;
+  ctx.lineWidth = 1;
+  for (let c = 1; c < COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(FIELD_X + c * CELL, FIELD_Y);
+    ctx.lineTo(FIELD_X + c * CELL, FIELD_Y + FIELD_H);
+    ctx.stroke();
+  }
+  for (let r = 1; r < VISIBLE_ROWS; r++) {
+    ctx.beginPath();
+    ctx.moveTo(FIELD_X, FIELD_Y + r * CELL);
+    ctx.lineTo(FIELD_X + FIELD_W, FIELD_Y + r * CELL);
+    ctx.stroke();
+  }
+
+  // Vignette on field edges
+  // Top
+  const vigT = ctx.createLinearGradient(FIELD_X, FIELD_Y, FIELD_X, FIELD_Y + CELL * 2);
+  vigT.addColorStop(0, 'rgba(10,5,20,0.4)');
+  vigT.addColorStop(1, 'rgba(10,5,20,0)');
+  ctx.fillStyle = vigT;
+  ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, CELL * 2);
+  // Bottom
+  const vigB = ctx.createLinearGradient(FIELD_X, FIELD_Y + FIELD_H - CELL * 2, FIELD_X, FIELD_Y + FIELD_H);
+  vigB.addColorStop(0, 'rgba(10,5,20,0)');
+  vigB.addColorStop(1, 'rgba(10,5,20,0.35)');
+  ctx.fillStyle = vigB;
+  ctx.fillRect(FIELD_X, FIELD_Y + FIELD_H - CELL * 2, FIELD_W, CELL * 2);
+
+  // Magenta glow border
+  ctx.save();
+  ctx.shadowColor = 'rgba(242,61,126,0.25)';
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = '#3a2060';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2);
+  ctx.restore();
+
+  // Crisp inner border
+  ctx.strokeStyle = C_BORDER;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(FIELD_X - 0.5, FIELD_Y - 0.5, FIELD_W + 1, FIELD_H + 1);
+}
+
+function drawBoard() {
+  for (let r = HIDDEN_ROWS; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (board[r][c] !== 0) {
+        const px = FIELD_X + c * CELL;
+        const py = FIELD_Y + (r - HIDDEN_ROWS) * CELL;
+        drawCell(px, py, board[r][c]);
+      }
+    }
+  }
+}
+
+function drawGhost() {
+  if (!features.ghost) return;
+  if (!activePiece || phase !== 'playing') return;
+  const gy = ghostY();
+  if (gy === activePiece.y) return;
+  const shape = getShape(activePiece.type, activePiece.rot);
+  const size = shape.length;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const by = gy + r;
+      if (by < HIDDEN_ROWS) continue;
+      const px = FIELD_X + (activePiece.x + c) * CELL;
+      const py = FIELD_Y + (by - HIDDEN_ROWS) * CELL;
+      drawCell(px, py, activePiece.type, 0.2);
+    }
+  }
+}
+
+function drawActivePiece() {
+  if (!activePiece) return;
+  const { type, rot, x, y } = activePiece;
+  const shape = getShape(type, rot);
+  const size = shape.length;
+
+  // Glow effect for active piece
+  ctx.save();
+  ctx.shadowColor = PIECE_COLORS[type]; // was PIECE_GLOW (a duplicate of PIECE_COLORS)
+  ctx.shadowBlur = 12;
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!shape[r][c]) continue;
+      const by = y + r;
+      if (by < HIDDEN_ROWS) continue;
+      const px = FIELD_X + (x + c) * CELL;
+      const py = FIELD_Y + (by - HIDDEN_ROWS) * CELL;
+      drawCell(px, py, type);
+    }
+  }
+  ctx.restore();
+}
+
+function drawPieceInBox(type, cx, cy, label) {
+  if (!type) return;
+  const shape = getShape(type, 0);
+  const size = shape.length;
+  // Find actual occupied bounds
+  let minR = size, maxR = 0, minC = size, maxC = 0;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (shape[r][c]) {
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+      }
+    }
+  }
+  const pw = (maxC - minC + 1) * CELL;
+  const ph = (maxR - minR + 1) * CELL;
+  const ox = cx - pw / 2;
+  const oy = cy - ph / 2;
+  for (let r = minR; r <= maxR; r++) {
+    for (let c = minC; c <= maxC; c++) {
+      if (shape[r][c]) {
+        drawCell(ox + (c - minC) * CELL, oy + (r - minR) * CELL, type);
+      }
+    }
+  }
+}
+
+function drawRoundedRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawPanel(x, y, w, h, title) {
+  drawRoundedRect(x, y, w, h, 6);
+  ctx.fillStyle = C_PANEL_BG;
+  ctx.fill();
+  ctx.strokeStyle = C_BORDER;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(title, x + w / 2, y + 18);
+
+  // Accent underline below title
+  const lineGrad = ctx.createLinearGradient(x + 10, 0, x + w - 10, 0);
+  lineGrad.addColorStop(0, 'rgba(242,61,126,0)');
+  lineGrad.addColorStop(0.5, 'rgba(242,61,126,0.3)');
+  lineGrad.addColorStop(1, 'rgba(242,61,126,0)');
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(x + 10, y + 24, w - 20, 1);
+}
+
+function drawHoldPanel() {
+  const px = MARGIN / 2;
+  const py = FIELD_Y;
+  const pw = PANEL_W - MARGIN;
+  const ph = CELL * 4;
+  drawPanel(px, py, pw, ph, features.hold ? 'HOLD' : 'HOLD (off)');
+  if (features.hold && holdType) {
+    drawPieceInBox(holdType, px + pw / 2, py + ph / 2 + 8);
+  }
+}
+
+function drawNextPanel() {
+  const px = FIELD_X + FIELD_W + MARGIN + MARGIN / 2;
+  const py = FIELD_Y;
+  const pw = PANEL_W - MARGIN;
+  const ph = CELL * 12;
+  drawPanel(px, py, pw, ph, features.next ? 'NEXT' : 'NEXT (off)');
+  if (features.next) {
+    for (let i = 0; i < Math.min(3, nextQueue.length); i++) {
+      drawPieceInBox(nextQueue[i], px + pw / 2, py + 50 + i * CELL * 3.5);
+    }
+  }
+}
+
+function drawScorePanel() {
+  const px = MARGIN / 2;
+  const py = FIELD_Y + CELL * 5;
+  const pw = PANEL_W - MARGIN;
+  drawRoundedRect(px, py, pw, CELL * 10, 6);
+  ctx.fillStyle = C_PANEL_BG;
+  ctx.fill();
+  ctx.strokeStyle = C_BORDER;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  const cx = px + pw / 2;
+  let yy = py + 24;
+
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('SCORE', cx, yy);
+  yy += 22;
+  ctx.fillStyle = C_TEXT;
+  ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(score.toLocaleString(), cx, yy);
+
+  yy += 36;
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('LEVEL', cx, yy);
+  yy += 22;
+  ctx.fillStyle = C_TEXT;
+  ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(level, cx, yy);
+
+  yy += 36;
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('LINES', cx, yy);
+  yy += 22;
+  ctx.fillStyle = C_TEXT;
+  ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(lines, cx, yy);
+
+  yy += 36;
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('HIGH SCORE', cx, yy);
+  yy += 22;
+  ctx.fillStyle = '#f23d7e';
+  ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(highScore.toLocaleString(), cx, yy);
+}
+
+function drawLineClearAnim() {
+  if (phase !== 'lineclear') return;
+  const progress = clearAnimTimer / LINE_CLEAR_TIME;
+  const alpha = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+  for (const row of clearingRows) {
+    const py = FIELD_Y + (row - HIDDEN_ROWS) * CELL;
+    ctx.fillStyle = `rgba(242,61,126,${alpha * 0.7})`;
+    ctx.fillRect(FIELD_X, py, FIELD_W, CELL);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawScorePops() {
+  ctx.textAlign = 'center';
+  for (const pop of scorePops) {
+    const t = pop.timer / pop.duration;
+    const alpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+    const yOff = -t * 60; // float upward
+    const scale = t < 0.1 ? 0.5 + t * 5 : 1; // quick scale-in
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.fillStyle = '#f23d7e';
+    ctx.font = `bold ${Math.round(18 * scale)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillText(pop.text, pop.x, pop.y + yOff);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawActionTexts() {
+  if (actionTexts.length === 0) return;
+  ctx.textAlign = 'center';
+  for (let i = 0; i < actionTexts.length; i++) {
+    const at = actionTexts[i];
+    const t = at.timer / at.duration;
+    const alpha = t < 0.15 ? t / 0.15 : t > 0.7 ? (1 - t) / 0.3 : 1;
+    const scale = t < 0.1 ? 0.7 + t * 3 : 1;
+    ctx.globalAlpha = Math.max(0, alpha * 0.9);
+    ctx.fillStyle = '#ec008c';
+    ctx.font = `bold ${Math.round(14 * scale)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillText(at.text, FIELD_X + FIELD_W / 2, FIELD_Y + CELL * 3 + i * 20);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawOverlay(title, subtitle) {
+  const cw = isMobile ? MOBILE_CANVAS_W : CANVAS_W;
+  const ch = isMobile ? MOBILE_CANVAS_H : CANVAS_H;
+  ctx.fillStyle = 'rgba(15,8,32,0.88)';
+  ctx.fillRect(0, 0, cw, ch);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = C_TEXT;
+  ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(title, cw / 2, ch / 2 - 20);
+
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(subtitle, cw / 2, ch / 2 + 20);
+}
+
+
+function drawMenuScreen() {
+  const cw = isMobile ? MOBILE_CANVAS_W : CANVAS_W;
+  const ch = isMobile ? MOBILE_CANVAS_H : CANVAS_H;
+  const cx = cw / 2;
+
+  // Subtle gradient background
+  const bgGrad = ctx.createLinearGradient(0, 0, cw, ch);
+  bgGrad.addColorStop(0, '#0f0820');
+  bgGrad.addColorStop(0.5, '#1a0e30');
+  bgGrad.addColorStop(1, '#0f0820');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Decorative horizontal line — magenta accent
+  const lineY = ch * 0.22;
+  const lineGrad = ctx.createLinearGradient(cw * 0.15, 0, cw * 0.85, 0);
+  lineGrad.addColorStop(0, 'rgba(242,61,126,0)');
+  lineGrad.addColorStop(0.3, 'rgba(242,61,126,0.4)');
+  lineGrad.addColorStop(0.5, 'rgba(242,61,126,0.6)');
+  lineGrad.addColorStop(0.7, 'rgba(242,61,126,0.4)');
+  lineGrad.addColorStop(1, 'rgba(242,61,126,0)');
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(cw * 0.15, lineY, cw * 0.7, 1.5);
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.font = (isMobile ? 'bold 36px' : 'bold 48px') + ' -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = '#f0e8ff';
+  ctx.fillText('TETRIS', cx, ch * 0.18);
+
+  // Bottom decorative line
+  const lineY2 = ch * 0.22 + 4;
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(cw * 0.15, lineY2, cw * 0.7, 1);
+
+  // "Press SPACE to start" — pulsing
+  const pulse = 0.5 + Math.sin(Date.now() / 600) * 0.3;
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = C_TEXT;
+  ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(isMobile ? 'Tap to start' : 'Press SPACE to start', cx, ch * 0.28);
+  ctx.globalAlpha = 1;
+
+  // Level selector
+  ctx.fillStyle = '#f23d7e';
+  ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText((isMobile ? 'Use ◀▶  ' : '◄  ') + 'LEVEL ' + startLevel + (isMobile ? '' : '  ►'), cx, ch * 0.35);
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
+  ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', cx, ch * 0.39);
+
+  // Controls section
+  ctx.fillStyle = C_TEXT_DIM;
+  ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('CONTROLS', cx, ch * 0.46);
+
+  // Thin separator
+  ctx.fillStyle = 'rgba(130,50,180,0.2)';
+  ctx.fillRect(cx - 80, ch * 0.47, 160, 1);
+
+  const controlLines = isMobile ? [
+    ['◀ ▶', 'Move'],
+    ['▼', 'Soft Drop'],
+    ['↻ ↺', 'Rotate'],
+    ['⇊', 'Hard Drop'],
+  ] : [
+    ['← →', 'Move'],
+    ['↓', 'Soft Drop'],
+    ['↑ / X', 'Rotate CW'],
+    ['Z', 'Rotate CCW'],
+    ['SPACE', 'Hard Drop'],
+    ['C', 'Hold'],
+    ['P / ESC', 'Pause'],
+    ['Q', 'Quit to Menu'],
+  ];
+  const ctrlStartY = ch * 0.50;
+  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  for (let i = 0; i < controlLines.length; i++) {
+    const y = ctrlStartY + i * 17;
+    ctx.fillStyle = '#f0e8ff';
+    ctx.textAlign = 'right';
+    ctx.fillText(controlLines[i][0], cx - 10, y);
+    ctx.fillStyle = C_TEXT_DIM;
+    ctx.textAlign = 'left';
+    ctx.fillText(controlLines[i][1], cx + 10, y);
+  }
+
+  // High score at bottom
+  if (highScore > 0) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C_TEXT_DIM;
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('HIGH SCORE', cx, ch * 0.92);
+    ctx.fillStyle = '#f23d7e';
+    ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(highScore.toLocaleString(), cx, ch * 0.96);
+  }
+}
+
+function render() {
+  const cw = isMobile ? MOBILE_CANVAS_W : CANVAS_W;
+  const ch = isMobile ? MOBILE_CANVAS_H : CANVAS_H;
+
+  // Clear with subtle gradient
+  const canvasGrad = ctx.createLinearGradient(0, 0, cw, ch);
+  canvasGrad.addColorStop(0, '#0d0720');
+  canvasGrad.addColorStop(0.5, C_BG);
+  canvasGrad.addColorStop(1, '#0d0720');
+  ctx.fillStyle = canvasGrad;
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Show/hide toggle buttons based on phase
+  const togglesEl = document.getElementById('toggles');
+  if (togglesEl) togglesEl.classList.toggle('hidden', phase === 'menu');
+  updateTouchUI();
+
+  if (phase === 'menu') {
+    drawMenuScreen();
+    return;
+  }
+
+  // Draw the playfield + pieces in field-local coordinates. On mobile the
+  // visible canvas is field-only, so shift by -FIELD_X. Wrapped in save/restore
+  // so an early return (or a thrown draw) can never leak the transform.
+  ctx.save();
+  if (isMobile) ctx.translate(-FIELD_X, 0);
+
+  // Draw game elements
+  drawPlayfield();
+  drawBoard();
+  drawGhost();
+  drawActivePiece();
+  drawLineClearAnim();
+  drawParticles();
+  drawScorePops();
+  drawActionTexts();
+
+  // Desktop only: draw canvas-based panels (already in canvas coords)
+  if (!isMobile) {
+    drawHoldPanel();
+    drawNextPanel();
+    drawScorePanel();
+  }
+  ctx.restore();
+
+  if (phase === 'paused') {
+    drawOverlay('PAUSED', isMobile ? 'Use buttons below' : 'P to resume  /  Q to quit');
+  }
+
+  if (phase === 'gameover') {
+    // Game-over overlay draws in field coordinates, so apply the same shift.
+    ctx.save();
+    if (isMobile) ctx.translate(-FIELD_X, 0);
+    // Darken overlay
+    ctx.fillStyle = 'rgba(15,8,32,0.82)';
+    ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#f23d7e';
+    ctx.font = 'bold 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('GAME OVER', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 - 30);
+
+    ctx.fillStyle = C_TEXT;
+    ctx.font = '18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('Score: ' + score.toLocaleString(), FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 10);
+
+    if (score >= highScore && score > 0) {
+      ctx.fillStyle = '#ec008c';
+      ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('NEW HIGH SCORE!', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 38);
+    }
+
+    ctx.fillStyle = C_TEXT_DIM;
+    ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(isMobile ? 'Tap to play again' : 'Press SPACE to play again', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 70);
+    ctx.restore();
+  }
+
+  // Update mobile HUD with current game state
+  if (isMobile) updateMobileHUD();
+}
+
+/* ============================================
+   SECTION 13A: MOBILE HUD
+   ============================================ */
+function drawMiniPiece(canvasId, type) {
+  const mc = document.getElementById(canvasId);
+  if (!mc) return;
+  const mctx = mc.getContext('2d');
+  mctx.clearRect(0, 0, mc.width, mc.height);
+  if (!type) return;
+  const miniCell = 12;
+  const shape = getShape(type, 0);
+  const sz = shape.length;
+  let minR = sz, maxR = 0, minC = sz, maxC = 0;
+  for (let r = 0; r < sz; r++)
+    for (let c = 0; c < sz; c++)
+      if (shape[r][c]) { minR = Math.min(minR, r); maxR = Math.max(maxR, r); minC = Math.min(minC, c); maxC = Math.max(maxC, c); }
+  const pw = (maxC - minC + 1) * miniCell;
+  const ph = (maxR - minR + 1) * miniCell;
+  const ox = (mc.width - pw) / 2;
+  const oy = (mc.height - ph) / 2;
+  for (let r = minR; r <= maxR; r++)
+    for (let c = minC; c <= maxC; c++)
+      if (shape[r][c]) {
+        const px = ox + (c - minC) * miniCell;
+        const py = oy + (r - minR) * miniCell;
+        mctx.fillStyle = PIECE_COLORS[type];
+        mctx.fillRect(px + 1, py + 1, miniCell - 2, miniCell - 2);
+        mctx.fillStyle = 'rgba(255,255,255,0.15)';
+        mctx.fillRect(px + 1, py + 1, miniCell - 2, 2);
+      }
+}
+
+function updateMobileHUD() {
+  const s = document.getElementById('hud-score');
+  const l = document.getElementById('hud-level');
+  const n = document.getElementById('hud-lines');
+  if (s) s.textContent = score.toLocaleString();
+  if (l) l.textContent = 'LV ' + level;
+  if (n) n.textContent = lines + ' lines';
+  drawMiniPiece('hold-mini', holdType);
+  drawMiniPiece('next-mini', nextQueue && nextQueue.length > 0 ? nextQueue[0] : null);
+}
+
+/* ============================================
+   SECTION 13B: MOBILE TOUCH CONTROLS
+   ============================================ */
+function setupTouchControls() {
+  const mapping = {
+    'tc-left': 'ArrowLeft',
+    'tc-right': 'ArrowRight',
+    'tc-down': 'ArrowDown',
+    'tc-cw': 'ArrowUp',
+    'tc-ccw': 'KeyZ',
+    'tc-hard': 'Space',
+    'tc-hold': 'KeyC',
+  };
+
+  for (const [btnId, keyCode] of Object.entries(mapping)) {
+    const btn = document.getElementById(btnId);
+    if (!btn) continue;
+
+    function pressKey() {
+      keys[keyCode] = true;
+      justPressed[keyCode] = true;
+      btn.classList.add('pressed');
+      if (features.sound && !audioCtx) initAudio();
+    }
+    function releaseKey() {
+      keys[keyCode] = false;
+      if (keyCode === 'ArrowLeft') { dasLeft = false; dasLeftTimer = 0; arrLeftTimer = 0; }
+      if (keyCode === 'ArrowRight') { dasRight = false; dasRightTimer = 0; arrRightTimer = 0; }
+      btn.classList.remove('pressed');
+    }
+
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); pressKey(); }, { passive: false });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); releaseKey(); }, { passive: false });
+    btn.addEventListener('touchcancel', releaseKey);
+
+    // Mouse support (emulators, touchscreen laptops)
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); pressKey(); });
+    btn.addEventListener('mouseup', (e) => { e.preventDefault(); releaseKey(); });
+    btn.addEventListener('mouseleave', () => { if (btn.classList.contains('pressed')) releaseKey(); });
+  }
+
+  // Pause button
+  const pauseBtn = document.getElementById('tc-pause');
+  if (pauseBtn) {
+    function togglePause(e) {
+      e.preventDefault();
+      if (phase === 'playing') phase = 'paused';
+      else if (phase === 'paused') phase = 'playing';
+    }
+    pauseBtn.addEventListener('touchstart', togglePause, { passive: false });
+    pauseBtn.addEventListener('click', togglePause);
+  }
+
+  // Quit button (visible only during pause)
+  const quitBtn = document.getElementById('tc-quit');
+  if (quitBtn) {
+    function handleQuit(e) {
+      e.preventDefault();
+      if (phase === 'paused') {
+        if (score > highScore) { highScore = score; saveHighScore(highScore); }
+        phase = 'menu';
+      }
+    }
+    quitBtn.addEventListener('touchstart', handleQuit, { passive: false });
+    quitBtn.addEventListener('click', handleQuit);
+  }
+
+  // Canvas tap/click for menu/gameover start
+  function handleCanvasTap(e) {
+    e.preventDefault();
+    if (phase === 'menu' || phase === 'gameover') {
+      justPressed['Space'] = true;
+      keys['Space'] = true;
+      setTimeout(() => { keys['Space'] = false; }, 100);
+    }
+    if (features.sound && !audioCtx) initAudio();
+  }
+  canvas.addEventListener('touchstart', handleCanvasTap, { passive: false });
+  canvas.addEventListener('click', (e) => {
+    if (phase === 'menu' || phase === 'gameover') {
+      justPressed['Space'] = true;
+      keys['Space'] = true;
+      setTimeout(() => { keys['Space'] = false; }, 100);
+    }
+  });
+
+  // Re-measure after touch controls render
+  requestAnimationFrame(handleResize);
+}
+
+function updateTouchUI() {
+  if (!isMobile) return;
+  const quitBtn = document.getElementById('tc-quit');
+  const pauseBtn = document.getElementById('tc-pause');
+  const holdBtn = document.getElementById('tc-hold');
+  if (quitBtn) quitBtn.style.display = (phase === 'paused') ? '' : 'none';
+  if (pauseBtn) pauseBtn.textContent = (phase === 'paused') ? '▶ Resume' : '⏸ Pause';
+  // FIX: mobile Hold button — visible during play when the hold feature is on.
+  // Dim it when already used this piece, mirroring the desktop behaviour.
+  if (holdBtn) {
+    const inPlay = (phase === 'playing' || phase === 'lineclear');
+    const show = inPlay && features.hold;
+    holdBtn.style.display = show ? '' : 'none';
+    holdBtn.style.opacity = (show && holdUsed) ? '0.4' : '1';
+  }
+  // Show/hide HUD based on game phase
+  const hud = document.getElementById('mobile-hud');
+  if (hud) {
+    const showHud = (phase === 'playing' || phase === 'paused' || phase === 'lineclear');
+    const currentlyShown = getComputedStyle(hud).display !== 'none';
+    if (currentlyShown !== showHud) {
+      hud.style.display = showHud ? 'flex' : 'none';
+      handleResize();
+    }
+  }
+}
+
+if (isMobile) setupTouchControls();
+
+/* ============================================
+   SECTION 13: GAME LOOP
+   ============================================ */
+function gameLoop(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const dt = Math.min(timestamp - lastTime, 100); // cap at 100ms to avoid spiral
+  lastTime = timestamp;
+
+  processInput(dt);
+  update(dt);
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+
+/* ============================================
+   SECTION 14: INITIALIZATION
+   ============================================ */
+highScore = loadHighScore();
+phase = 'menu';
+lastTime = 0;
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
