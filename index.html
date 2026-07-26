@@ -243,6 +243,7 @@
 <div id="touch-controls">
   <div class="touch-top-row">
     <button id="tc-pause">⏸ Pause</button>
+    <button id="tc-hold" style="display:none">📦 Hold</button>
     <button id="tc-quit" style="display:none">✕ Quit</button>
   </div>
   <div class="touch-main">
@@ -258,14 +259,14 @@
     </div>
   </div>
 </div>
+<script src="tetris-core.js"></script>
 <script>
 /* ============================================
-   SECTION 1: CONSTANTS & CONFIGURATION
+   SECTION 1: LAYOUT & RENDER CONSTANTS
+   Pure game constants (COLS, ROWS, HIDDEN_ROWS, SHAPES, KICKS_*, timing
+   constants, helpers, scoring, T-spin) live in tetris-core.js, loaded above.
+   Only pixel/layout/render values are kept here.
    ============================================ */
-const COLS = 10;
-const ROWS = 24;        // 4 hidden + 20 visible
-const VISIBLE_ROWS = 20;
-const HIDDEN_ROWS = 4;
 const CELL = 30;        // pixels per cell
 
 // Layout dimensions
@@ -284,13 +285,8 @@ const FIELD_Y = CELL;
 const MOBILE_CANVAS_W = FIELD_W;           // 300
 const MOBILE_CANVAS_H = FIELD_H + CELL;    // 630
 
-// Timing (ms)
-const LOCK_DELAY = 500;
-const MAX_LOCK_RESETS = 15;
-const DAS_DELAY = 167;
-const ARR_INTERVAL = 33;
-const LINE_CLEAR_TIME = 300;
-const ENTRY_DELAY = 80;
+// Timing constants (LOCK_DELAY, MAX_LOCK_RESETS, DAS_DELAY, ARR_INTERVAL,
+// LINE_CLEAR_TIME) are defined in tetris-core.js.
 
 // Colors — Omilia-inspired deep purple palette
 const C_BG        = '#0f0820';
@@ -310,104 +306,12 @@ const PIECE_COLORS = {
   6: '#2979ff', // J - Blue
   7: '#ff9100', // L - Orange
 };
-
-const PIECE_GLOW = {
-  1: '#00e5ff',
-  2: '#ffea00',
-  3: '#d500f9',
-  4: '#76ff03',
-  5: '#ff1744',
-  6: '#2979ff',
-  7: '#ff9100',
-};
+// (PIECE_GLOW removed — it was a verbatim duplicate of PIECE_COLORS; use the latter.)
 
 /* ============================================
-   SECTION 2: TETROMINO DEFINITIONS
-   ============================================ */
-// Piece type index: I=1, O=2, T=3, S=4, Z=5, J=6, L=7
-const PIECE_NAMES = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L'];
-
-// Rotation states for each piece (4 states each)
-// Using standard SRS rotation states
-const SHAPES = {
-  1: [ // I
-    [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
-    [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]],
-    [[0,0,0,0],[0,0,0,0],[1,1,1,1],[0,0,0,0]],
-    [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]],
-  ],
-  2: [ // O
-    [[1,1],[1,1]],
-    [[1,1],[1,1]],
-    [[1,1],[1,1]],
-    [[1,1],[1,1]],
-  ],
-  3: [ // T
-    [[0,1,0],[1,1,1],[0,0,0]],
-    [[0,1,0],[0,1,1],[0,1,0]],
-    [[0,0,0],[1,1,1],[0,1,0]],
-    [[0,1,0],[1,1,0],[0,1,0]],
-  ],
-  4: [ // S
-    [[0,1,1],[1,1,0],[0,0,0]],
-    [[0,1,0],[0,1,1],[0,0,1]],
-    [[0,0,0],[0,1,1],[1,1,0]],
-    [[1,0,0],[1,1,0],[0,1,0]],
-  ],
-  5: [ // Z
-    [[1,1,0],[0,1,1],[0,0,0]],
-    [[0,0,1],[0,1,1],[0,1,0]],
-    [[0,0,0],[1,1,0],[0,1,1]],
-    [[0,1,0],[1,1,0],[1,0,0]],
-  ],
-  6: [ // J
-    [[1,0,0],[1,1,1],[0,0,0]],
-    [[0,1,1],[0,1,0],[0,1,0]],
-    [[0,0,0],[1,1,1],[0,0,1]],
-    [[0,1,0],[0,1,0],[1,1,0]],
-  ],
-  7: [ // L
-    [[0,0,1],[1,1,1],[0,0,0]],
-    [[0,1,0],[0,1,0],[0,1,1]],
-    [[0,0,0],[1,1,1],[1,0,0]],
-    [[1,1,0],[0,1,0],[0,1,0]],
-  ],
-};
-
-// SRS Wall Kick Data
-// Offsets: [dx, dy] where +x=right, +y=down (board coordinates)
-const KICKS_JLSTZ = {
-  '0>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
-  '1>0': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
-  '1>2': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
-  '2>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
-  '2>3': [[ 0, 0],[ 1, 0],[ 1,-1],[ 0, 2],[ 1, 2]],
-  '3>2': [[ 0, 0],[-1, 0],[-1, 1],[ 0,-2],[-1,-2]],
-  '3>0': [[ 0, 0],[-1, 0],[-1, 1],[ 0,-2],[-1,-2]],
-  '0>3': [[ 0, 0],[ 1, 0],[ 1,-1],[ 0, 2],[ 1, 2]],
-};
-
-const KICKS_I = {
-  '0>1': [[ 0, 0],[-2, 0],[ 1, 0],[-2, 1],[ 1,-2]],
-  '1>0': [[ 0, 0],[ 2, 0],[-1, 0],[ 2,-1],[-1, 2]],
-  '1>2': [[ 0, 0],[-1, 0],[ 2, 0],[-1,-2],[ 2, 1]],
-  '2>1': [[ 0, 0],[ 1, 0],[-2, 0],[ 1, 2],[-2,-1]],
-  '2>3': [[ 0, 0],[ 2, 0],[-1, 0],[ 2,-1],[-1, 2]],
-  '3>2': [[ 0, 0],[-2, 0],[ 1, 0],[-2, 1],[ 1,-2]],
-  '3>0': [[ 0, 0],[ 1, 0],[-2, 0],[ 1, 2],[-2,-1]],
-  '0>3': [[ 0, 0],[-1, 0],[ 2, 0],[-1,-2],[ 2, 1]],
-};
-
-// Spawn positions (col offset for top-left of bounding box)
-function spawnX(type) {
-  return type === 1 ? 3 : type === 2 ? 4 : 3;
-}
-function spawnY(type) {
-  return type === 1 ? 0 : 2; // I starts higher due to 4x4 box
-}
-
-/* ============================================
-   SECTION 3: CANVAS SETUP
+   SECTION 2: CANVAS SETUP
+   (Tetromino shapes, SRS kick tables, and spawn helpers now live in
+    tetris-core.js, shared with tests.html.)
    ============================================ */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -461,7 +365,7 @@ handleResize();
 let board, activePiece, nextQueue, holdType, holdUsed;
 let score, level, lines, combo, backToBack;
 let phase; // 'menu', 'playing', 'paused', 'lineclear', 'gameover'
-let gravityAcc, lockTimer, lockResets, entryTimer;
+let gravityAcc, lockTimer, lockResets;
 let clearingRows, clearAnimTimer;
 let highScore;
 let lastTime;
@@ -470,6 +374,8 @@ let lastMovedOrRotated; // 'move' or 'rotate' — for T-spin detection
 // DAS state
 let dasLeft, dasRight, dasLeftTimer, dasRightTimer;
 let arrLeftTimer, arrRightTimer;
+// Soft-drop state — awards +1/cell (Guideline) in the gravity loop while held.
+let softDropping = false;
 
 // Visual effects state
 let particles = [];
@@ -626,7 +532,6 @@ function resetGame() {
   gravityAcc = 0;
   lockTimer = 0;
   lockResets = 0;
-  entryTimer = 0;
   clearingRows = [];
   clearAnimTimer = 0;
   lastMovedOrRotated = null;
@@ -666,25 +571,11 @@ function dequeue() {
 
 /* ============================================
    SECTION 6: BOARD LOGIC
+   The pure helpers (getShape, isValidOn, getFullRowsOf, removeRowsFrom) live
+   in tetris-core.js. The wrappers below bind them to the current game board.
    ============================================ */
-function getShape(type, rot) {
-  return SHAPES[type][rot];
-}
-
 function isValid(type, rot, px, py) {
-  const shape = getShape(type, rot);
-  const size = shape.length;
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (!shape[r][c]) continue;
-      const bx = px + c;
-      const by = py + r;
-      if (bx < 0 || bx >= COLS || by >= ROWS) return false;
-      if (by < 0) continue; // above board is ok
-      if (board[by][bx] !== 0) return false;
-    }
-  }
-  return true;
+  return isValidOn(board, type, rot, px, py);
 }
 
 function lockPiece() {
@@ -705,18 +596,11 @@ function lockPiece() {
 }
 
 function getFullRows() {
-  const full = [];
-  for (let r = HIDDEN_ROWS; r < ROWS; r++) {
-    if (board[r].every(c => c !== 0)) full.push(r);
-  }
-  return full;
+  return getFullRowsOf(board);
 }
 
 function removeRows(rows) {
-  for (const r of rows.sort((a, b) => a - b)) {
-    board.splice(r, 1);
-    board.unshift(new Array(COLS).fill(0));
-  }
+  removeRowsFrom(board, rows);
 }
 
 function ghostY() {
@@ -781,18 +665,8 @@ function moveRight() {
   return false;
 }
 
-function softDrop() {
-  if (!activePiece) return false;
-  const { type, rot, x, y } = activePiece;
-  if (isValid(type, rot, x, y + 1)) {
-    activePiece.y++;
-    score += 1;
-    gravityAcc = 0;
-    lastMovedOrRotated = 'move';
-    return true;
-  }
-  return false;
-}
+// Soft drop is handled inline in the gravity loop (update()): while ArrowDown
+// is held, gravity is accelerated and each cell dropped awards +1 point.
 
 function hardDrop() {
   if (!activePiece) return;
@@ -888,77 +762,29 @@ function onSurface() {
 
 /* ============================================
    SECTION 8: SCORING & T-SPIN DETECTION
+   The pure implementations (detectTSpin, calculateScore) live in
+   tetris-core.js and are unit-tested in tests.html. Here we bind them to the
+   current game state.
    ============================================ */
 function isTSpin() {
-  if (!activePiece || activePiece.type !== 3) return { tspin: false, mini: false };
-  if (lastMovedOrRotated !== 'rotate') return { tspin: false, mini: false };
-  // Check 4 corners of T's 3x3 bounding box center
-  const cx = activePiece.x + 1;
-  const cy = activePiece.y + 1;
-  const corners = [
-    [cx - 1, cy - 1], [cx + 1, cy - 1],
-    [cx - 1, cy + 1], [cx + 1, cy + 1]
-  ];
-  let filled = 0;
-  for (const [bx, by] of corners) {
-    if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || board[by][bx] !== 0) {
-      filled++;
-    }
-  }
-  if (filled >= 3) {
-    // Determine front corners based on rotation
-    const frontCorners = {
-      0: [[cx - 1, cy - 1], [cx + 1, cy - 1]], // flat side on top
-      1: [[cx + 1, cy - 1], [cx + 1, cy + 1]], // flat side on right
-      2: [[cx - 1, cy + 1], [cx + 1, cy + 1]], // flat side on bottom
-      3: [[cx - 1, cy - 1], [cx - 1, cy + 1]], // flat side on left
-    };
-    const front = frontCorners[activePiece.rot];
-    let frontFilled = 0;
-    for (const [bx, by] of front) {
-      if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS || board[by][bx] !== 0) {
-        frontFilled++;
-      }
-    }
-    if (frontFilled === 2) return { tspin: true, mini: false };
-    return { tspin: false, mini: true };
-  }
-  return { tspin: false, mini: false };
+  return detectTSpin(activePiece, board, lastMovedOrRotated);
 }
 
 function getDropInterval() {
-  return Math.pow(0.8 - ((level - 1) * 0.007), level - 1) * 1000; // ms
+  return dropIntervalFor(level); // ms
 }
 
-function calculateScore(numLines, tspin, mini) {
-  let base = 0;
-  let difficult = false;
-
-  if (tspin) {
-    difficult = true;
-    base = [400, 800, 1200, 1600][numLines];
-  } else if (mini) {
-    difficult = numLines > 0;
-    base = [100, 200, 400, 0][numLines];
-  } else {
-    base = [0, 100, 300, 500, 800][numLines];
-    difficult = numLines === 4;
-  }
-
-  let pts = base * level;
-
-  if (difficult && backToBack) {
-    pts = Math.floor(pts * 1.5);
-  }
-  if (numLines > 0) {
-    backToBack = difficult;
-    combo++;
-    pts += 50 * combo * level;
-  } else {
-    combo = -1;
-  }
-
-  return pts;
+// Applies the score for a clear to the module state and returns the points
+// awarded. Pure logic + side effects on score/backToBack/combo.
+function applyScore(numLines, tspin, mini) {
+  const res = calculateScore(
+    { level, backToBack, combo },
+    numLines, tspin, mini
+  );
+  score += res.points;
+  backToBack = res.backToBack;
+  combo = res.combo;
+  return res.points;
 }
 
 function updateLevel() {
@@ -1087,9 +913,9 @@ function processInput(dt) {
     }
   }
 
-  // Soft drop (continuous)
-  if (keys['ArrowDown']) {
-    // Override gravity with faster drop
+  // Soft drop (continuous) — accelerate gravity and award +1 per cell dropped.
+  softDropping = !!keys['ArrowDown'];
+  if (softDropping) {
     gravityAcc += dt * 15; // 15x normal speed for soft drop
   }
 
@@ -1144,9 +970,7 @@ function lockAndAdvance() {
   const full = getFullRows();
   if (full.length > 0) {
     const prevLevel = level;
-    const prevScore = score;
-    score += calculateScore(full.length, tspin, mini);
-    const gained = score - prevScore;
+    const gained = applyScore(full.length, tspin, mini); // updates score/backToBack/combo
     lines += full.length;
     updateLevel();
     clearingRows = full;
@@ -1170,12 +994,10 @@ function lockAndAdvance() {
     if (backToBack && (full.length === 4 || tspin)) label += ' B2B';
     spawnScorePop(gained, label);
   } else {
-    // No lines cleared — still award T-spin no-line bonus
-    const prevScore = score;
-    if (tspin) { score += 400 * level; spawnScorePop(400 * level, 'T-SPIN'); }
-    else if (mini) { score += 100 * level; spawnScorePop(100 * level, 'T-SPIN MINI'); }
-    combo = -1;
-    entryTimer = ENTRY_DELAY;
+    // No lines cleared. A 0-line T-spin / mini still awards its bonus and (for
+    // a full T-spin) maintains back-to-back — handled by applyScore/core.
+    const gained = applyScore(0, tspin, mini);
+    if (gained > 0) spawnScorePop(gained, tspin ? 'T-SPIN' : 'T-SPIN MINI');
     phase = 'playing';
     spawnPiece();
   }
@@ -1235,6 +1057,8 @@ function update(dt) {
     gravityAcc -= interval;
     if (isValid(activePiece.type, activePiece.rot, activePiece.x, activePiece.y + 1)) {
       activePiece.y++;
+      // FIX: soft drop awards +1 point per cell dropped (Tetris Guideline).
+      if (softDropping) score += 1;
     } else {
       gravityAcc = 0;
       break;
@@ -1386,7 +1210,7 @@ function drawActivePiece() {
 
   // Glow effect for active piece
   ctx.save();
-  ctx.shadowColor = PIECE_GLOW[type];
+  ctx.shadowColor = PIECE_COLORS[type]; // was PIECE_GLOW (a duplicate of PIECE_COLORS)
   ctx.shadowBlur = 12;
 
   for (let r = 0; r < size; r++) {
@@ -1733,7 +1557,10 @@ function render() {
     return;
   }
 
-  // Mobile: translate so FIELD_X maps to x=0 on canvas
+  // Draw the playfield + pieces in field-local coordinates. On mobile the
+  // visible canvas is field-only, so shift by -FIELD_X. Wrapped in save/restore
+  // so an early return (or a thrown draw) can never leak the transform.
+  ctx.save();
   if (isMobile) ctx.translate(-FIELD_X, 0);
 
   // Draw game elements
@@ -1746,21 +1573,21 @@ function render() {
   drawScorePops();
   drawActionTexts();
 
-  // Desktop only: draw canvas-based panels
+  // Desktop only: draw canvas-based panels (already in canvas coords)
   if (!isMobile) {
     drawHoldPanel();
     drawNextPanel();
     drawScorePanel();
   }
-
-  // Undo translate before overlays
-  if (isMobile) ctx.translate(FIELD_X, 0);
+  ctx.restore();
 
   if (phase === 'paused') {
     drawOverlay('PAUSED', isMobile ? 'Use buttons below' : 'P to resume  /  Q to quit');
   }
 
   if (phase === 'gameover') {
+    // Game-over overlay draws in field coordinates, so apply the same shift.
+    ctx.save();
     if (isMobile) ctx.translate(-FIELD_X, 0);
     // Darken overlay
     ctx.fillStyle = 'rgba(15,8,32,0.82)';
@@ -1784,7 +1611,7 @@ function render() {
     ctx.fillStyle = C_TEXT_DIM;
     ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText(isMobile ? 'Tap to play again' : 'Press SPACE to play again', FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2 + 70);
-    if (isMobile) ctx.translate(FIELD_X, 0);
+    ctx.restore();
   }
 
   // Update mobile HUD with current game state
@@ -1928,8 +1755,17 @@ function updateTouchUI() {
   if (!isMobile) return;
   const quitBtn = document.getElementById('tc-quit');
   const pauseBtn = document.getElementById('tc-pause');
+  const holdBtn = document.getElementById('tc-hold');
   if (quitBtn) quitBtn.style.display = (phase === 'paused') ? '' : 'none';
   if (pauseBtn) pauseBtn.textContent = (phase === 'paused') ? '▶ Resume' : '⏸ Pause';
+  // FIX: mobile Hold button — visible during play when the hold feature is on.
+  // Dim it when already used this piece, mirroring the desktop behaviour.
+  if (holdBtn) {
+    const inPlay = (phase === 'playing' || phase === 'lineclear');
+    const show = inPlay && features.hold;
+    holdBtn.style.display = show ? '' : 'none';
+    holdBtn.style.opacity = (show && holdUsed) ? '0.4' : '1';
+  }
   // Show/hide HUD based on game phase
   const hud = document.getElementById('mobile-hud');
   if (hud) {

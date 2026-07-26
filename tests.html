@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tetris core — unit tests</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a0a2e; color: #f0e8ff; margin: 24px; line-height: 1.5; }
+  h1 { color: #f23d7e; }
+  .pass { color: #76ff03; }
+  .fail { color: #ff1744; font-weight: bold; }
+  pre { background: #0f0820; padding: 12px; border-radius: 6px; overflow-x: auto; border: 1px solid #3a2060; white-space: pre-wrap; }
+  #summary { font-size: 18px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<h1>Tetris core — unit tests</h1>
+<div id="summary">Running…</div>
+<pre id="out"></pre>
+<script src="tetris-core.js"></script>
+<script>
+'use strict';
+/* Tiny assertion harness — no dependencies. */
+const out = document.getElementById('out');
+const summary = document.getElementById('summary');
+let passed = 0, failed = 0;
+const failures = [];
+
+function eq(actual, expected, label) {
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a === e) {
+    out.textContent += `  ✓ ${label}\n`;
+    passed++;
+  } else {
+    out.textContent += `  ✗ ${label}\n      expected: ${e}\n      actual:   ${a}\n`;
+    failures.push(label);
+    failed++;
+  }
+}
+
+function run(label, fn) {
+  out.textContent += `\n${label}\n`;
+  fn();
+}
+
+/* ============================================================
+   1. 7-BAG RANDOMIZER
+   ============================================================ */
+run('shuffledBag', () => {
+  const bag = shuffledBag();
+  eq(bag.length, 7, 'bag has 7 pieces');
+  const sorted = [...bag].sort((a, b) => a - b);
+  eq(sorted, [1, 2, 3, 4, 5, 6, 7], 'bag contains each piece exactly once');
+
+  // Statistically: across many bags, every type should appear.
+  const seen = new Set();
+  for (let i = 0; i < 10; i++) shuffledBag().forEach(x => seen.add(x));
+  eq(seen.size, 7, '10 bags cover all 7 types');
+});
+
+/* ============================================================
+   2. BOARD HELPERS
+   ============================================================ */
+run('makeBoard / isValidOn', () => {
+  const b = makeBoard();
+  eq(b.length, ROWS, `board has ROWS=${ROWS} rows`);
+  eq(b[0].length, COLS, `row has COLS=${COLS} cols`);
+
+  // Empty board: a freshly spawned I piece is valid.
+  eq(isValidOn(b, 1, 0, spawnX(1), spawnY(1)), true, 'spawn I on empty board is valid');
+  // Above the top of the board is allowed (negative y).
+  eq(isValidOn(b, 1, 0, spawnX(1), -2), true, 'cells above top row are allowed');
+  // Off the right edge is invalid.
+  eq(isValidOn(b, 1, 0, COLS, 0), false, 'piece off right edge is invalid');
+});
+
+run('getFullRowsOf / removeRowsFrom', () => {
+  const b = makeBoard();
+  // Fill row 22 (visible) completely.
+  for (let c = 0; c < COLS; c++) b[22][c] = 1;
+  eq(getFullRowsOf(b), [22], 'a fully filled visible row is detected');
+  // Hidden rows do NOT count as cleared.
+  for (let c = 0; c < COLS; c++) b[0][c] = 1;
+  eq(getFullRowsOf(b), [22], 'a filled hidden row is NOT reported');
+
+  // Clear two visible rows.
+  for (let c = 0; c < COLS; c++) b[23][c] = 2;
+  eq(getFullRowsOf(b), [22, 23], 'two full rows detected');
+  removeRowsFrom(b, [22, 23]);
+  eq(getFullRowsOf(b), [], 'rows cleared after removeRowsFrom');
+  // After removal, the bottom rows should be empty (rows shifted down).
+  eq(b[23].every(v => v === 0), true, 'bottom row empty after clear');
+});
+
+/* ============================================================
+   3. T-SPIN DETECTION
+   ============================================================ */
+run('detectTSpin', () => {
+  // A non-T piece never counts.
+  eq(detectTSpin({ type: 1, rot: 0, x: 3, y: 2 }, makeBoard(), 'rotate'),
+     { tspin: false, mini: false }, 'I piece never a T-spin');
+
+  // lastMove !== 'rotate' never counts.
+  eq(detectTSpin({ type: 3, rot: 0, x: 3, y: 2 }, makeBoard(), 'move'),
+     { tspin: false, mini: false }, 'T-spin requires lastMove === rotate');
+
+  // Need >= 3 corners filled. Build a T-slot: leave column 5 open, fill the
+  // 3x3 corners around a T at (x=3, y=2) → center (4,3).
+  // corners: (3,2),(5,2),(3,4),(5,4). Fill three of them.
+  const b1 = makeBoard();
+  b1[2][3] = 1; // top-left
+  b1[2][5] = 1; // top-right
+  b1[4][3] = 1; // bottom-left
+  // rot 0 → front corners are the top two (both filled) → full T-spin.
+  eq(detectTSpin({ type: 3, rot: 0, x: 3, y: 2 }, b1, 'rotate'),
+     { tspin: true, mini: false }, '3 corners, both front filled → full T-spin');
+
+  // Now only one front corner filled → mini.
+  const b2 = makeBoard();
+  b2[2][3] = 1; // top-left  (front for rot 0)
+  b2[4][3] = 1; // bottom-left (back)
+  b2[4][5] = 1; // bottom-right (back)
+  eq(detectTSpin({ type: 3, rot: 0, x: 3, y: 2 }, b2, 'rotate'),
+     { tspin: false, mini: true }, '3 corners, only 1 front filled → mini');
+
+  // Fewer than 3 corners → nothing.
+  const b3 = makeBoard();
+  b3[2][3] = 1;
+  b3[4][3] = 1;
+  eq(detectTSpin({ type: 3, rot: 0, x: 3, y: 2 }, b3, 'rotate'),
+     { tspin: false, mini: false }, '<3 corners → no T-spin');
+});
+
+/* ============================================================
+   4. SCORING — single clears (level 1, no B2B)
+   ============================================================ */
+run('calculateScore — singles', () => {
+  const st = () => ({ level: 1, backToBack: false, combo: -1 });
+  eq(calculateScore(st(), 0, false, false).points, 0,   '0 lines → 0 pts');
+  eq(calculateScore(st(), 1, false, false).points, 100, 'single → 100');
+  eq(calculateScore(st(), 2, false, false).points, 300, 'double → 300');
+  eq(calculateScore(st(), 3, false, false).points, 500, 'triple → 500');
+  eq(calculateScore(st(), 4, false, false).points, 800, 'tetris → 800');
+});
+
+/* ============================================================
+   5. SCORING — level multiplier
+   ============================================================ */
+run('calculateScore — level multiplier', () => {
+  const st = () => ({ level: 5, backToBack: false, combo: -1 });
+  eq(calculateScore(st(), 1, false, false).points, 100 * 5, 'single L5 → 500');
+  eq(calculateScore(st(), 4, false, false).points, 800 * 5, 'tetris L5 → 4000');
+});
+
+/* ============================================================
+   6. SCORING — combos
+   ============================================================ */
+run('calculateScore — combos', () => {
+  // Combo of 2 (i.e. combo counter is 2 after this clear), single at L1 → 100 + 50*2*1 = 200
+  eq(calculateScore({ level: 1, backToBack: false, combo: 1 }, 1, false, false).points,
+     200, 'single, incoming combo=1 → 100 + 50*2*1');
+  // Tetris with combo=0 → 800 + 50*1*1 = 850
+  eq(calculateScore({ level: 1, backToBack: false, combo: 0 }, 4, false, false).points,
+     850, 'tetris, incoming combo=0 → 800 + 50');
+});
+
+/* ============================================================
+   7. SCORING — back-to-back (FIX #3, #4, #6)
+   ============================================================ */
+run('calculateScore — back-to-back & T-spin rules', () => {
+  // B2B: tetris after tetris → 800 * 1.5 = 1200 (L1)
+  eq(calculateScore({ level: 1, backToBack: true, combo: -1 }, 4, false, false).points,
+     1200, 'B2B tetris → 800 * 1.5');
+  // A single between two tetrises breaks B2B (sets backToBack false).
+  eq(calculateScore({ level: 1, backToBack: true, combo: -1 }, 1, false, false).backToBack,
+     false, 'single breaks B2B');
+
+  // FIX #3: T-spin mini must NOT be flagged difficult and must NOT consume B2B.
+  const miniRes = calculateScore({ level: 1, backToBack: true, combo: -1 }, 1, false, true);
+  eq(miniRes.difficult, false, 'FIX#3: mini is not difficult');
+  eq(miniRes.backToBack, false, 'FIX#3: mini does NOT preserve B2B');
+  // Mini single base = table[1] = 200 * level (no ×1.5 because not difficult).
+  // First clear of a chain: incoming combo -1 → 0, so combo bonus = 50*0*1 = 0.
+  eq(miniRes.points, 200, 'mini single L1 → 200 (no B2B bonus, no combo bonus)');
+
+  // Full T-spin IS difficult and preserves B2B.
+  const tspinRes = calculateScore({ level: 1, backToBack: true, combo: -1 }, 1, true, false);
+  eq(tspinRes.difficult, true, 'full T-spin is difficult');
+  eq(tspinRes.backToBack, true, 'full T-spin preserves B2B');
+  // T-spin single base = table[1] = 800, B2B ×1.5 → 1200. First clear: combo bonus 0.
+  eq(tspinRes.points, 1200, 'B2B T-spin single L1 → 800*1.5');
+
+  // FIX #4: 0-line T-spin maintains B2B. It is NOT a line clear, so the B2B
+  // ×1.5 bonus must NOT be applied — it scores flat base×level (800 at L1).
+  const tspinZero = calculateScore({ level: 1, backToBack: true, combo: -1 }, 0, true, false);
+  eq(tspinZero.backToBack, true, 'FIX#4: 0-line T-spin maintains B2B');
+  eq(tspinZero.points, 400, '0-line T-spin L1 → 400 (no B2B ×1.5, no combo)');
+  eq(calculateScore({ level: 1, backToBack: false, combo: -1 }, 0, true, false).backToBack,
+     true, '0-line T-spin sets B2B even when it was off');
+  // And a normal 0-line (no tspin) resets combo.
+  eq(calculateScore({ level: 1, backToBack: false, combo: 3 }, 0, false, false).combo,
+     -1, 'plain 0-line resets combo');
+
+  // FIX #6: mini triple no longer silently scores 0.
+  const miniTriple = calculateScore({ level: 2, backToBack: false, combo: -1 }, 3, false, true);
+  eq(miniTriple.points > 0, true, 'FIX#6: mini triple scores > 0');
+});
+
+/* ============================================================
+   8. GRAVITY FORMULA
+   ============================================================ */
+run('dropIntervalFor', () => {
+  eq(dropIntervalFor(1), 1000, 'L1 → 1.0s/row');
+  // Level 2 = 0.793^1 * 1000 ≈ 793
+  eq(Math.round(dropIntervalFor(2)), 793, 'L2 ≈ 793ms');
+  // Monotonically faster (smaller interval) as level increases.
+  const l5 = dropIntervalFor(5), l10 = dropIntervalFor(10);
+  eq(l10 < l5, true, 'L10 faster than L5');
+  eq(dropIntervalFor(15) < l10, true, 'L15 faster than L10');
+});
+
+/* ============================================================
+   SUMMARY
+   ============================================================ */
+const color = failed === 0 ? '#76ff03' : '#ff1744';
+summary.innerHTML = `<span style="color:${color}">${passed} passed, ${failed} failed</span>`;
+if (failed > 0) {
+  out.textContent += `\n--- FAILURES ---\n${failures.map(s => '  - ' + s).join('\n')}\n`;
+}
+// Non-blocking signal for headless runners:
+window.__testsDone = { passed, failed };
+</script>
+</body>
+</html>
