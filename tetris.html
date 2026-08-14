@@ -234,10 +234,10 @@
 <div id="wrapper">
   <canvas id="game"></canvas>
   <div id="toggles" class="hidden">
-    <button id="btn-sound" onclick="toggleFeature('sound',this)">🔇 Sound</button>
-    <button id="btn-ghost" onclick="toggleFeature('ghost',this)">👻 Ghost</button>
-    <button id="btn-next" class="on" onclick="toggleFeature('next',this)">⏭ Next</button>
-    <button id="btn-hold" class="on" onclick="toggleFeature('hold',this)">📦 Hold</button>
+    <button id="btn-sound">🔇 Sound</button>
+    <button id="btn-ghost">👻 Ghost</button>
+    <button id="btn-next" class="on">⏭ Next</button>
+    <button id="btn-hold" class="on">📦 Hold</button>
   </div>
 </div>
 <div id="touch-controls">
@@ -276,7 +276,6 @@ const ARR_INTERVAL = 33;
 const LINE_CLEAR_TIME = 300;
 
 // Piece type index: I=1, O=2, T=3, S=4, Z=5, J=6, L=7
-const PIECE_NAMES = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L'];
 
 // Rotation states for each piece (4 states each) — standard SRS.
 const SHAPES = {
@@ -324,11 +323,11 @@ const SHAPES = {
   ],
 };
 
-// SRS Wall Kick Data. Offsets: [dx, dy] where +x=right, +y=down (board coords).
 function getShape(type, rot) {
   return SHAPES[type][rot];
 }
 
+// SRS Wall Kick Data. Offsets: [dx, dy] where +x=right, +y=down (board coords).
 const KICKS_JLSTZ = {
   '0>1': [[ 0, 0],[-1, 0],[-1,-1],[ 0, 2],[-1, 2]],
   '1>0': [[ 0, 0],[ 1, 0],[ 1, 1],[ 0,-2],[ 1,-2]],
@@ -537,24 +536,58 @@ const PIECE_COLORS = {
    ============================================ */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
-// Also detect mobile layout via CSS media query (covers emulators and small screens)
+// Cached DOM refs used per-frame (render/updateTouchUI) to avoid repeated
+// lookups and forced style flushes.
+const togglesEl = document.getElementById('toggles');
+const touchEls = {
+  quitBtn: null, pauseBtn: null, holdBtn: null, hud: null,
+};
+let touchUISig = '';
+
+// Single source of truth for mobile mode: the CSS media query
+// ((pointer: coarse) or (max-width: 600px)) — i.e. whichever layout the user
+// actually sees. Re-evaluated on resize so narrowing/widening the window
+// switches canvas resolution in lockstep with the styles.
 function checkMobileLayout() {
   const tc = document.getElementById('touch-controls');
-  return tc && getComputedStyle(tc).display !== 'none';
+  return !!(tc && getComputedStyle(tc).display !== 'none');
 }
-if (!isMobile && checkMobileLayout()) isMobile = true;
+let isMobile = checkMobileLayout();
 
-// Set canvas internal resolution based on platform
-if (isMobile) {
-  canvas.width = MOBILE_CANVAS_W;
-  canvas.height = MOBILE_CANVAS_H;
-} else {
-  canvas.width = CANVAS_W;
-  canvas.height = CANVAS_H;
+function applyCanvasResolution() {
+  if (isMobile) {
+    canvas.width = MOBILE_CANVAS_W;
+    canvas.height = MOBILE_CANVAS_H;
+  } else {
+    canvas.width = CANVAS_W;
+    canvas.height = CANVAS_H;
+  }
+}
+applyCanvasResolution();
+
+// Touch controls are bound at most once, whenever mobile mode is first active.
+let touchControlsSetup = false;
+function ensureTouchControls() {
+  if (isMobile && !touchControlsSetup) {
+    touchControlsSetup = true;
+    setupTouchControls();
+  }
 }
 
 function handleResize() {
+  // The media query is live even though this script ran once — re-check it so
+  // the canvas resolution always matches the layout the CSS is showing.
+  const mobileNow = checkMobileLayout();
+  if (mobileNow !== isMobile) {
+    isMobile = mobileNow;
+    applyCanvasResolution();
+    // Let CSS govern the HUD again (updateTouchUI sets an inline style) and
+    // force the touch UI to re-apply for the new mode.
+    const hud = document.getElementById('mobile-hud');
+    if (hud) hud.style.display = '';
+    touchUISig = '';
+  }
+  ensureTouchControls();
   if (isMobile) {
     const tc = document.getElementById('touch-controls');
     const hud = document.getElementById('mobile-hud');
@@ -594,7 +627,7 @@ let lastTime;
 let lastMovedOrRotated; // 'move' or 'rotate' — for T-spin detection
 
 // DAS state
-let dasLeft, dasRight, dasLeftTimer, dasRightTimer;
+let dasLeftTimer, dasRightTimer;
 let arrLeftTimer, arrRightTimer;
 // Soft-drop state — awards +1/cell (Guideline) in the gravity loop while held.
 let softDropping = false;
@@ -608,17 +641,24 @@ let actionTexts = [];     // {text, timer, duration} — combo/b2b/tspin notific
 const features = { ghost: false, next: true, hold: true, sound: false };
 let startLevel = 2;
 
-function toggleFeature(name, btn) {
+function toggleFeature(name) {
   features[name] = !features[name];
-  btn.classList.toggle('on', features[name]);
-  // Update sound button emoji
-  if (name === 'sound') {
-    btn.textContent = features.sound ? '🔊 Sound' : '🔇 Sound';
-    if (features.sound) initAudio();
+  const btn = document.getElementById('btn-' + name);
+  if (btn) {
+    btn.classList.toggle('on', features[name]);
+    if (name === 'sound') btn.textContent = features.sound ? '🔊 Sound' : '🔇 Sound';
+    // Keep focus off the button so Space isn't swallowed by it mid-game.
+    btn.blur();
   }
-  // Prevent button from stealing focus from game
-  btn.blur();
-  canvas.focus();
+  if (name === 'sound' && features.sound) initAudio();
+}
+
+// Toggle buttons are bound by id convention (btn-<name>).
+function setupToggleButtons() {
+  for (const name of ['sound', 'ghost', 'next', 'hold']) {
+    const btn = document.getElementById('btn-' + name);
+    if (btn) btn.addEventListener('click', () => toggleFeature(name));
+  }
 }
 
 /* ============================================
@@ -629,10 +669,14 @@ let audioCtx = null;
 function initAudio() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  // No-op if already running; clears autoplay-policy suspension some
+  // browsers (notably Safari) apply even to gesture-created contexts.
+  audioCtx.resume();
 }
 
 function playSound(name) {
   if (!features.sound || !audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   const t = audioCtx.currentTime;
   const vol = 0.12;
 
@@ -741,7 +785,7 @@ function saveHighScore(s) {
 }
 
 function resetGame() {
-  board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+  board = makeBoard();
   nextQueue = [];
   fillQueue();
   holdType = 0;
@@ -760,7 +804,6 @@ function resetGame() {
   particles = [];
   scorePops = [];
   actionTexts = [];
-  dasLeft = false; dasRight = false;
   dasLeftTimer = 0; dasRightTimer = 0;
   arrLeftTimer = 0; arrRightTimer = 0;
   activePiece = null;
@@ -769,16 +812,8 @@ function resetGame() {
 
 /* ============================================
    SECTION 5: 7-BAG RANDOM GENERATOR
+   (shuffledBag is defined in Section 1)
    ============================================ */
-function shuffledBag() {
-  const bag = [1, 2, 3, 4, 5, 6, 7];
-  for (let i = bag.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [bag[i], bag[j]] = [bag[j], bag[i]];
-  }
-  return bag;
-}
-
 function fillQueue() {
   while (nextQueue.length < 14) {
     nextQueue.push(...shuffledBag());
@@ -836,21 +871,25 @@ function ghostY() {
 /* ============================================
    SECTION 7: PIECE MOVEMENT & ROTATION
    ============================================ */
+function triggerGameOver(piece) {
+  activePiece = piece;
+  lockPiece();
+  phase = 'gameover';
+  playSound('gameover');
+  if (score > highScore) {
+    highScore = score;
+    saveHighScore(highScore);
+  }
+}
+
 function spawnPiece() {
   const type = dequeue();
   const rot = 0;
   const x = spawnX(type);
   const y = spawnY(type);
   if (!isValid(type, rot, x, y)) {
-    // Game over
-    activePiece = { type, rot, x, y };
-    lockPiece();
-    phase = 'gameover';
-    playSound('gameover');
-    if (score > highScore) {
-      highScore = score;
-      saveHighScore(highScore);
-    }
+    // Spawn blocked — game over
+    triggerGameOver({ type, rot, x, y });
     return;
   }
   activePiece = { type, rot, x, y };
@@ -956,6 +995,12 @@ function holdPiece() {
     const rot = 0;
     const x = spawnX(prev);
     const y = spawnY(prev);
+    // A swapped-in piece must be able to spawn — same rule as a fresh piece.
+    // Without this check it would materialize overlapping the stack.
+    if (!isValid(prev, rot, x, y)) {
+      triggerGameOver({ type: prev, rot, x, y });
+      return;
+    }
     activePiece = { type: prev, rot, x, y };
     gravityAcc = 0;
     lockTimer = 0;
@@ -1028,8 +1073,8 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   keys[e.code] = false;
   justPressed[e.code] = false;
-  if (e.code === 'ArrowLeft') { dasLeft = false; dasLeftTimer = 0; arrLeftTimer = 0; }
-  if (e.code === 'ArrowRight') { dasRight = false; dasRightTimer = 0; arrRightTimer = 0; }
+  if (e.code === 'ArrowLeft') { dasLeftTimer = 0; arrLeftTimer = 0; }
+  if (e.code === 'ArrowRight') { dasRightTimer = 0; arrRightTimer = 0; }
 });
 
 function processInput(dt) {
@@ -1705,7 +1750,7 @@ function drawMenuScreen() {
   ctx.fillText((isMobile ? 'Use ◀▶  ' : '◄  ') + 'LEVEL ' + startLevel + (isMobile ? '' : '  ►'), cx, ch * 0.35);
   ctx.fillStyle = C_TEXT_DIM;
   ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  const spd = Math.pow(0.8 - ((startLevel - 1) * 0.007), startLevel - 1);
+  const spd = gravityFactor(startLevel);
   ctx.fillText('Speed: ' + spd.toFixed(3) + 's/row', cx, ch * 0.39);
 
   // Controls section
@@ -1722,6 +1767,8 @@ function drawMenuScreen() {
     ['▼', 'Soft Drop'],
     ['↻ ↺', 'Rotate'],
     ['⇊', 'Hard Drop'],
+    ['📦', 'Hold'],
+    ['⏸', 'Pause'],
   ] : [
     ['← →', 'Move'],
     ['↓', 'Soft Drop'],
@@ -1769,7 +1816,6 @@ function render() {
   ctx.fillRect(0, 0, cw, ch);
 
   // Show/hide toggle buttons based on phase
-  const togglesEl = document.getElementById('toggles');
   if (togglesEl) togglesEl.classList.toggle('hidden', phase === 'menu');
   updateTouchUI();
 
@@ -1840,7 +1886,7 @@ function render() {
 }
 
 /* ============================================
-   SECTION 13A: MOBILE HUD
+   SECTION 13: MOBILE HUD
    ============================================ */
 function drawMiniPiece(canvasId, type) {
   const mc = document.getElementById(canvasId);
@@ -1883,7 +1929,7 @@ function updateMobileHUD() {
 }
 
 /* ============================================
-   SECTION 13B: MOBILE TOUCH CONTROLS
+   SECTION 14: MOBILE TOUCH CONTROLS
    ============================================ */
 function setupTouchControls() {
   const mapping = {
@@ -1908,8 +1954,8 @@ function setupTouchControls() {
     }
     function releaseKey() {
       keys[keyCode] = false;
-      if (keyCode === 'ArrowLeft') { dasLeft = false; dasLeftTimer = 0; arrLeftTimer = 0; }
-      if (keyCode === 'ArrowRight') { dasRight = false; dasRightTimer = 0; arrRightTimer = 0; }
+      if (keyCode === 'ArrowLeft') { dasLeftTimer = 0; arrLeftTimer = 0; }
+      if (keyCode === 'ArrowRight') { dasRightTimer = 0; arrRightTimer = 0; }
       btn.classList.remove('pressed');
     }
 
@@ -1974,13 +2020,24 @@ function setupTouchControls() {
 
 function updateTouchUI() {
   if (!isMobile) return;
-  const quitBtn = document.getElementById('tc-quit');
-  const pauseBtn = document.getElementById('tc-pause');
-  const holdBtn = document.getElementById('tc-hold');
+  // Called every frame from render(): only touch the DOM (and force a
+  // getComputedStyle flush) when the state that drives it actually changed.
+  const sig = phase + '|' + holdUsed + '|' + features.hold;
+  if (sig === touchUISig) return;
+  touchUISig = sig;
+
+  if (!touchEls.quitBtn) {
+    touchEls.quitBtn = document.getElementById('tc-quit');
+    touchEls.pauseBtn = document.getElementById('tc-pause');
+    touchEls.holdBtn = document.getElementById('tc-hold');
+    touchEls.hud = document.getElementById('mobile-hud');
+  }
+  const { quitBtn, pauseBtn, holdBtn, hud } = touchEls;
+
   if (quitBtn) quitBtn.style.display = (phase === 'paused') ? '' : 'none';
   if (pauseBtn) pauseBtn.textContent = (phase === 'paused') ? '▶ Resume' : '⏸ Pause';
-  // FIX: mobile Hold button — visible during play when the hold feature is on.
-  // Dim it when already used this piece, mirroring the desktop behaviour.
+  // Mobile Hold button — visible during play when the hold feature is on;
+  // dimmed once used this piece (mirrors desktop behaviour).
   if (holdBtn) {
     const inPlay = (phase === 'playing' || phase === 'lineclear');
     const show = inPlay && features.hold;
@@ -1988,7 +2045,6 @@ function updateTouchUI() {
     holdBtn.style.opacity = (show && holdUsed) ? '0.4' : '1';
   }
   // Show/hide HUD based on game phase
-  const hud = document.getElementById('mobile-hud');
   if (hud) {
     const showHud = (phase === 'playing' || phase === 'paused' || phase === 'lineclear');
     const currentlyShown = getComputedStyle(hud).display !== 'none';
@@ -1999,10 +2055,8 @@ function updateTouchUI() {
   }
 }
 
-if (isMobile) setupTouchControls();
-
 /* ============================================
-   SECTION 13: GAME LOOP
+   SECTION 15: GAME LOOP
    ============================================ */
 function gameLoop(timestamp) {
   if (!lastTime) lastTime = timestamp;
@@ -2017,11 +2071,12 @@ function gameLoop(timestamp) {
 }
 
 /* ============================================
-   SECTION 14: INITIALIZATION
+   SECTION 16: INITIALIZATION
    ============================================ */
 highScore = loadHighScore();
 phase = 'menu';
 lastTime = 0;
+setupToggleButtons();
 requestAnimationFrame(gameLoop);
 </script>
 </body>
