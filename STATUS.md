@@ -25,7 +25,7 @@ change (see AGENTS.md → Milestone banking)._
 ### 2026-09-19 — SuperExecutor contract installed
 
 - **Done:** installed the agent contract (AGENTS.md, customized from
-  `JNProjects/AGENTS.md.template`) and the durable-memory docs
+  `JNProjects/AGENTS.bak.md`) and the durable-memory docs
   (STATUS/MEMORY/CHANGELOG/PROJECT/MEMORY_ARCHIVE). The previous CLAUDE.md
   contract was replaced by a thin pointer; its full content was preserved —
   gotchas → MEMORY.md, stack/commands → AGENTS.md.
